@@ -63,7 +63,7 @@ final class InferenceService {
     private func handle(_ request: HTTPRequest, _ responder: HTTPResponder) async {
         switch (request.method, request.path) {
         case ("GET", "/"), ("GET", "/health"), ("GET", "/v1"):
-            await responder.respondJSON(Health(status: "ok", model: activeModelName, server: "Hearth"))
+            await responder.respondJSON(Health(status: "ok", model: activeModelName, server: "Hearth", version: Self.version))
         case ("GET", "/v1/models"):
             await responder.respondJSON(modelList())
         case ("POST", "/v1/chat/completions"), ("POST", "/chat/completions"):
@@ -80,7 +80,11 @@ final class InferenceService {
         let status: String
         let model: String?
         let server: String
+        /// Lets clients check for features: structured output (`response_format`) needs 0.2 or later.
+        let version: String
     }
+
+    static let version = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "0"
 
     private var activeModelName: String? {
         models.state == .ready ? models.activeModel?.id : nil

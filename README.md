@@ -75,6 +75,26 @@ Endpoints: `GET /v1/models`, `POST /v1/chat/completions` (streaming and non-stre
 
 > Cursor sends custom-model requests from its own servers, so it can't reach `localhost` without a tunnel.
 
+### Structured output
+
+Send an OpenAI `response_format` with a JSON Schema and the reply matches it. For `apple-intelligence`,
+Hearth turns the schema into Foundation Models guided generation, so the JSON always parses and enums are
+respected. Local models get the schema as an instruction.
+
+```bash
+curl http://localhost:8800/v1/chat/completions -H "Content-Type: application/json" -d '{
+  "model": "apple-intelligence",
+  "messages": [{"role": "user", "content": "A title and three tags for a beach sunset photo"}],
+  "response_format": {"type": "json_schema", "json_schema": {"name": "Photo", "schema": {
+    "type": "object",
+    "properties": {"title": {"type": "string"}, "tags": {"type": "array", "items": {"type": "string"}, "maxItems": 3}},
+    "required": ["title", "tags"]}}}
+}'
+```
+
+Building in Swift? [HearthKit](https://github.com/seckinbeduk/hearthkit) plugs Hearth into Foundation Models,
+so `@Generable` and streaming work as they do with Apple Intelligence.
+
 ### Apps that use Hearth
 
 These use Apple Intelligence when it's there and Hearth when you choose it or when it isn't.

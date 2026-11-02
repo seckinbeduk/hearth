@@ -10,9 +10,11 @@ struct ChooseView: View {
             VStack(alignment: .leading, spacing: 18) {
                 HStack(alignment: .top) {
                     VStack(alignment: .leading, spacing: 4) {
-                        Text("Here's what your Mac can run")
+                        Text(model.canCancelChoosing ? "Choose a local model" : "Here's what your Mac can run")
                             .font(.largeTitle.weight(.semibold))
-                        Text("Everything runs on this Mac. Nothing you send leaves it.")
+                        Text(model.canCancelChoosing
+                             ? "Apple Intelligence is always served alongside it. Everything runs on this Mac."
+                             : "Everything runs on this Mac. Nothing you send leaves it.")
                             .foregroundStyle(.secondary)
                     }
                     Spacer()
@@ -140,10 +142,10 @@ private struct AppleIntelligenceCard: View {
                     .foregroundStyle(.secondary)
             }
             if status.isUsable {
-                Button("Use only Apple Intelligence") {
+                Button("Skip the local model") {
                     Task { await model.runAppleIntelligenceOnly() }
                 }
-                .help("Start serving right away with no download. Small context, good for quick tasks.")
+                .help("Serve only Apple Intelligence: nothing to download, and the memory a local model would use stays free.")
             } else if status == .notEnabled {
                 Button("Open System Settings") {
                     NSWorkspace.shared.open(URL(fileURLWithPath: "/System/Applications/System Settings.app"))
@@ -250,13 +252,22 @@ private struct PickCard: View {
     let fit: ModelFit
     let reason: String?
 
+    /// This is the model Hearth is serving right now.
+    private var isRunning: Bool {
+        model.models.activeModel?.id == fit.model.id && model.models.state == .ready
+    }
+
     var body: some View {
         Card {
             HStack(alignment: .firstTextBaseline) {
                 Text(fit.model.displayName)
                     .font(.title2.weight(.semibold))
                 if fit.isRecommended { Badge(text: "Recommended", color: Theme.flame) }
-                if fit.isDownloaded { Badge(text: "Already downloaded", color: Theme.ready) }
+                if isRunning {
+                    Badge(text: "Running", color: Theme.ready)
+                } else if fit.isDownloaded {
+                    Badge(text: "Already downloaded", color: Theme.ready)
+                }
                 Spacer()
                 Badge(text: fit.verdict.title, color: fit.verdict.color)
             }
@@ -267,7 +278,8 @@ private struct PickCard: View {
             }
             HStack(spacing: 10) {
                 Stat(label: "Download", value: fit.isDownloaded ? "None" : Format.gb(fit.model.diskGB))
-                Stat(label: "Memory", value: Format.gb(fit.memoryGB))
+                Stat(label: "Memory (est.)", value: Format.gb(fit.memoryGB))
+                    .help("What it needs with the whole context in use. It usually takes less until long prompts fill it.")
                 Stat(label: "Speed", value: "~" + Format.speed(fit.tokensPerSecond))
                 Stat(label: "Context", value: "\(fit.context / 1024)K")
             }
@@ -279,13 +291,13 @@ private struct PickCard: View {
                 Button {
                     Task { await model.run(fit.model) }
                 } label: {
-                    Text(fit.isDownloaded ? "Start" : "Download and start")
+                    Text(isRunning ? "Running" : fit.isDownloaded ? "Start" : "Download and start")
                         .frame(minWidth: 160)
                 }
                 .buttonStyle(.borderedProminent)
                 .tint(Theme.flame)
                 .controlSize(.large)
-                .disabled(!fit.verdict.isRunnable)
+                .disabled(isRunning || !fit.verdict.isRunnable)
             }
         }
     }

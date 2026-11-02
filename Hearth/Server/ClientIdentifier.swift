@@ -31,6 +31,8 @@ enum ClientIdentifier {
             ("postman", "Postman"),
             ("insomnia", "Insomnia"),
             ("hearth", "Hearth"),
+            ("nib/", "nib"),
+            ("moniker/", "Moniker"),
         ]
         if let match = known.first(where: { lower.contains($0.0) }) { return match.1 }
         if lower.hasPrefix("mozilla/") { return "Browser" }
@@ -49,6 +51,8 @@ enum ClientIdentifier {
         case "Browser", "Open WebUI": "safari"
         case "Raycast": "command"
         case "Hearth": "flame"
+        case "nib": "pencil.tip"          // github.com/seckinbeduk/nib
+        case "Moniker": "tag"             // github.com/seckinbeduk/moniker
         default: "app"
         }
     }

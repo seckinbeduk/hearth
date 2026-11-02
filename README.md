@@ -75,6 +75,16 @@ Endpoints: `GET /v1/models`, `POST /v1/chat/completions` (streaming and non-stre
 
 > Cursor sends custom-model requests from its own servers, so it can't reach `localhost` without a tunnel.
 
+### Apps that use Hearth
+
+These use Apple Intelligence when it's there and Hearth when you choose it or when it isn't.
+They show up in **Who's using it** with their own icons, so you can see what each one costs.
+
+- [nib](https://github.com/seckinbeduk/nib): writes your git commit messages. `git config --global nib.engine hearth`
+- [Moniker](https://github.com/seckinbeduk/moniker): names screenshots and downloads for what's inside. Settings → Engine → Hearth
+
+Building your own? Send an `X-Title` header with your app's name and Hearth lists it by that name.
+
 ## How the recommendation works
 
 1. **Budget.** Metal's recommended GPU working set. "Runs well" means weights plus an 8K-token KV cache fit in

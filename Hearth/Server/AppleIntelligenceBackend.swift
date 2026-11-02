@@ -51,6 +51,30 @@ enum AppleIntelligenceBackend {
         return AsyncThrowingStream { $0.finish(throwing: Unavailable()) }
     }
 
+    /// A whole answer that follows `format`'s JSON Schema, through guided generation.
+    /// Returns nil when there's no schema to follow; the caller streams plain text instead.
+    static func respondStructured(messages: [OpenAI.ChatRequest.Message], temperature: Double?, maxTokens: Int?,
+                                  format: OpenAI.ChatRequest.ResponseFormat) async throws -> String? {
+        #if canImport(FoundationModels)
+        if #available(macOS 26.0, *), let schema = try StructuredOutput.schema(from: format) {
+            let (system, prompt) = split(messages)
+            let options = GenerationOptions(temperature: temperature, maximumResponseTokens: maxTokens)
+            func respond(_ schema: GenerationSchema) async throws -> String {
+                let session = system.isEmpty ? LanguageModelSession() : LanguageModelSession(instructions: system)
+                return try await session.respond(to: prompt, schema: schema, options: options).content.jsonString
+            }
+            do {
+                return try await respond(schema)
+            } catch let failure where "\(failure)".localizedCaseInsensitiveContains("unsupported") {
+                // Some guides (regex patterns) aren't supported by every model version: drop them, keep the rest.
+                guard let relaxed = try StructuredOutput.schema(from: format, patterns: false) else { throw failure }
+                return try await respond(relaxed)
+            }
+        }
+        #endif
+        return nil
+    }
+
     struct Unavailable: LocalizedError {
         var errorDescription: String? { "Apple Intelligence isn't available on this Mac right now." }
     }

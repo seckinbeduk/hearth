@@ -47,6 +47,7 @@ enum OpenAI {
         let maxTokens: Int?
         let maxCompletionTokens: Int?
         let streamOptions: StreamOptions?
+        let responseFormat: ResponseFormat?
 
         enum CodingKeys: String, CodingKey {
             case model, messages, stream, temperature
@@ -54,9 +55,37 @@ enum OpenAI {
             case maxTokens = "max_tokens"
             case maxCompletionTokens = "max_completion_tokens"
             case streamOptions = "stream_options"
+            case responseFormat = "response_format"
         }
 
         var tokenLimit: Int? { maxCompletionTokens ?? maxTokens }
+
+        /// `{"type": "json_schema", "json_schema": {"name": …, "schema": {…}}}` or `{"type": "json_object"}`.
+        struct ResponseFormat: Decodable, Sendable {
+            struct Schema: Decodable, Sendable {
+                let name: String?
+                let schema: JSONValue?
+            }
+            let type: String
+            let jsonSchema: Schema?
+
+            enum CodingKeys: String, CodingKey {
+                case type
+                case jsonSchema = "json_schema"
+            }
+
+            var wantsJSON: Bool { type == "json_schema" || type == "json_object" }
+
+            /// For models that can't be constrained: the same request, in words.
+            var instruction: String? {
+                guard wantsJSON else { return nil }
+                guard let schema = jsonSchema?.schema, let data = try? JSONEncoder().encode(schema),
+                      let text = String(data: data, encoding: .utf8) else {
+                    return "Reply with only a JSON object, no other text."
+                }
+                return "Reply with only a JSON object that matches this JSON Schema, no other text:\n" + text
+            }
+        }
     }
 
     struct Usage: Codable, Sendable {
@@ -155,4 +184,41 @@ enum OpenAI {
         let object = "list"
         let data: [Entry]
     }
+}
+
+/// Any JSON value, for the parts of a request Hearth passes through, like a response schema.
+indirect enum JSONValue: Codable, Sendable, Equatable {
+    case string(String)
+    case number(Double)
+    case bool(Bool)
+    case array([JSONValue])
+    case object([String: JSONValue])
+    case null
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.singleValueContainer()
+        if container.decodeNil() { self = .null }
+        else if let value = try? container.decode(Bool.self) { self = .bool(value) }
+        else if let value = try? container.decode(Double.self) { self = .number(value) }
+        else if let value = try? container.decode(String.self) { self = .string(value) }
+        else if let value = try? container.decode([JSONValue].self) { self = .array(value) }
+        else { self = .object(try container.decode([String: JSONValue].self)) }
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.singleValueContainer()
+        switch self {
+        case .string(let value): try container.encode(value)
+        case .number(let value): try container.encode(value)
+        case .bool(let value): try container.encode(value)
+        case .array(let value): try container.encode(value)
+        case .object(let value): try container.encode(value)
+        case .null: try container.encodeNil()
+        }
+    }
+
+    var string: String? { if case .string(let value) = self { value } else { nil } }
+    var array: [JSONValue]? { if case .array(let value) = self { value } else { nil } }
+    var object: [String: JSONValue]? { if case .object(let value) = self { value } else { nil } }
+    var int: Int? { if case .number(let value) = self { Int(value) } else { nil } }
 }

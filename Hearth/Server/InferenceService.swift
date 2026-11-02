@@ -190,7 +190,17 @@ final class InferenceService {
         parameters.presencePenalty = 1.0
         parameters.presenceContextSize = 128
 
-        let messages: [Chat.Message] = body.messages.compactMap { message -> Chat.Message? in
+        // Local models can't be constrained to a schema; ask for it in the system message instead.
+        var requestMessages = body.messages
+        if let instruction = body.responseFormat?.instruction {
+            if let index = requestMessages.firstIndex(where: { $0.role == "system" || $0.role == "developer" }) {
+                let existing = requestMessages[index]
+                requestMessages[index] = .init(role: existing.role, content: existing.content + "\n\n" + instruction)
+            } else {
+                requestMessages.insert(.init(role: "system", content: instruction), at: 0)
+            }
+        }
+        let messages: [Chat.Message] = requestMessages.compactMap { message -> Chat.Message? in
             switch message.role {
             case "system", "developer": return Chat.Message.system(message.content)
             case "user": return Chat.Message.user(message.content)
@@ -248,14 +258,23 @@ final class InferenceService {
 
         do {
             try await output.begin()
-            for try await delta in AppleIntelligenceBackend.stream(messages: body.messages,
-                                                                   temperature: body.temperature,
-                                                                   maxTokens: body.tokenLimit) {
-                if firstDelta == nil { firstDelta = .now }
-                completionChars += delta.count
-                // The on-device API doesn't expose token counts; ~4 characters per token.
-                stats.token(for: recordID, client: client, count: max(1, delta.count / 4))
-                try await output.content(delta)
+            if let format = body.responseFormat,
+               let json = try await AppleIntelligenceBackend.respondStructured(
+                   messages: body.messages, temperature: body.temperature, maxTokens: body.tokenLimit, format: format) {
+                // Guided generation returns the whole object at once.
+                completionChars = json.count
+                stats.token(for: recordID, client: client, count: max(1, json.count / 4))
+                try await output.content(json)
+            } else {
+                for try await delta in AppleIntelligenceBackend.stream(messages: body.messages,
+                                                                       temperature: body.temperature,
+                                                                       maxTokens: body.tokenLimit) {
+                    if firstDelta == nil { firstDelta = .now }
+                    completionChars += delta.count
+                    // The on-device API doesn't expose token counts; ~4 characters per token.
+                    stats.token(for: recordID, client: client, count: max(1, delta.count / 4))
+                    try await output.content(delta)
+                }
             }
             let completion = max(1, completionChars / 4)
             // Measure from the first token so the on-device model's warm-up doesn't count as slowness.

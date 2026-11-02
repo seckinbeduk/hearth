@@ -46,20 +46,17 @@ struct MenuPanel: View {
         }
     }
 
-    private var title: String {
-        if let active = model.models.activeModel { return active.displayName }
-        if model.choice == .appleIntelligenceOnly { return "Apple Intelligence" }
-        return "Hearth"
-    }
+    /// The panel is about the server, which can answer with more than one model; each model's
+    /// details are in "Models on this endpoint".
+    private var title: String { "Hearth" }
 
     private var subtitle: String {
-        if model.models.activeModel != nil, model.models.state == .ready {
-            let memory = Format.bytes(model.monitor.footprintBytes)
-            return "MLX · 4-bit · \(memory) in memory"
-        }
-        if model.choice == .appleIntelligenceOnly { return "On-device · free · no download" }
         if model.needsSetup { return "Finish setup to start serving" }
-        return "No model loaded"
+        var serving: [String] = []
+        if let local = model.models.activeModel, model.models.state == .ready { serving.append(local.displayName) }
+        if model.hardware?.appleIntelligence.isUsable == true { serving.append("Apple Intelligence") }
+        guard !serving.isEmpty else { return "No model loaded" }
+        return "Serving " + ListFormatter.localizedString(byJoining: serving)
     }
 
     private var statusText: String {
@@ -140,7 +137,7 @@ struct MenuPanel: View {
         case .downloading(let p): "Downloading \(Int(p * 100))%"
         case .loading: "Loading"
         case .failed: "Error"
-        case .ready: "MLX · on GPU"
+        case .ready: "MLX · 4-bit · \(Format.bytes(model.monitor.footprintBytes))"
         case .idle: "Not loaded"
         }
     }

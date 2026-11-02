@@ -221,4 +221,5 @@ indirect enum JSONValue: Codable, Sendable, Equatable {
     var array: [JSONValue]? { if case .array(let value) = self { value } else { nil } }
     var object: [String: JSONValue]? { if case .object(let value) = self { value } else { nil } }
     var int: Int? { if case .number(let value) = self { Int(value) } else { nil } }
+    var number: Double? { if case .number(let value) = self { value } else { nil } }
 }

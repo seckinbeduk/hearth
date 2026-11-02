@@ -59,6 +59,7 @@ struct DashboardView: View {
                 ModelTile(
                     symbol: "flame.fill", color: Theme.flame,
                     name: model.models.activeModel?.displayName ?? "No local model",
+                    status: localStatus,
                     modelID: model.models.activeModel == nil ? nil : "hearth",
                     detail: localDetail,
                     speed: speedLine
@@ -72,12 +73,24 @@ struct DashboardView: View {
                     ModelTile(
                         symbol: "sparkles", color: Theme.apple,
                         name: "Apple Intelligence",
+                        status: model.server.isRunning ? ("Running", Theme.ready) : ("Paused", .secondary),
                         modelID: AppleIntelligenceBackend.modelID,
                         detail: "On-device · free · no download",
                         speed: model.stats.measuredSpeed[AppleIntelligenceBackend.modelID].map { "Measured \(Format.speed($0))" }
                     ) { EmptyView() }
                 }
             }
+            .fixedSize(horizontal: false, vertical: true)   // both tiles as tall as the taller one
+        }
+    }
+
+    private var localStatus: (String, Color) {
+        switch model.models.state {
+        case .ready: return model.server.isRunning ? ("Running", Theme.ready) : ("Paused", .secondary)
+        case .downloading(let p): return ("Downloading \(Int(p * 100))%", Theme.apple)
+        case .loading: return ("Loading", Theme.apple)
+        case .failed: return ("Error", .red)
+        case .idle: return ("Off", .secondary)
         }
     }
 
@@ -570,6 +583,7 @@ private struct ModelTile<Accessory: View>: View {
     let symbol: String
     let color: Color
     let name: String
+    let status: (String, Color)
     let modelID: String?
     let detail: String
     let speed: String?
@@ -580,6 +594,7 @@ private struct ModelTile<Accessory: View>: View {
             HStack(spacing: 8) {
                 Image(systemName: symbol).foregroundStyle(color)
                 Text(name).font(.title3.weight(.semibold))
+                Badge(text: status.0, color: status.1)
                 Spacer(minLength: 8)
                 accessory()
             }
@@ -593,7 +608,7 @@ private struct ModelTile<Accessory: View>: View {
             }
         }
         .padding(14)
-        .frame(maxWidth: .infinity, alignment: .leading)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .background(color.opacity(0.07), in: .rect(cornerRadius: 12))
         .overlay(RoundedRectangle(cornerRadius: 12).strokeBorder(color.opacity(0.18)))
     }

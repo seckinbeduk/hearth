@@ -1,0 +1,7 @@
+.build/
+*.xcodeproj/
+DerivedData/
+xcuserdata/
+.DS_Store
+Hearth/Info.plist
+dist/

@@ -1,0 +1,94 @@
+{
+  "version": 1,
+  "updated": "2026-10-31",
+  "models": [
+    {
+      "id": "mlx-community/Qwen3-1.7B-4bit",
+      "displayName": "Qwen3 1.7B",
+      "roles": ["router", "general"],
+      "paramsB": 1.7,
+      "diskGB": 0.98,
+      "activeGB": 0.98,
+      "kvKBPerToken": 112,
+      "quality": 35,
+      "maxContext": 32768
+    },
+    {
+      "id": "mlx-community/Qwen3-4B-4bit",
+      "displayName": "Qwen3 4B",
+      "roles": ["router", "general"],
+      "paramsB": 4.0,
+      "diskGB": 2.28,
+      "activeGB": 2.28,
+      "kvKBPerToken": 144,
+      "quality": 52,
+      "maxContext": 32768
+    },
+    {
+      "id": "mlx-community/Qwen3-8B-4bit",
+      "displayName": "Qwen3 8B",
+      "roles": ["general"],
+      "paramsB": 8.2,
+      "diskGB": 4.62,
+      "activeGB": 4.62,
+      "kvKBPerToken": 144,
+      "quality": 63,
+      "maxContext": 32768
+    },
+    {
+      "id": "mlx-community/Qwen3-14B-4bit",
+      "displayName": "Qwen3 14B",
+      "roles": ["general"],
+      "paramsB": 14.8,
+      "diskGB": 8.32,
+      "activeGB": 8.32,
+      "kvKBPerToken": 160,
+      "quality": 70,
+      "maxContext": 32768
+    },
+    {
+      "id": "mlx-community/Qwen3-30B-A3B-4bit",
+      "displayName": "Qwen3 30B-A3B (MoE)",
+      "roles": ["general"],
+      "paramsB": 30.5,
+      "diskGB": 17.2,
+      "activeGB": 1.86,
+      "kvKBPerToken": 96,
+      "quality": 74,
+      "maxContext": 32768
+    },
+    {
+      "id": "mlx-community/Qwen3-32B-4bit",
+      "displayName": "Qwen3 32B",
+      "roles": ["general"],
+      "paramsB": 32.8,
+      "diskGB": 18.4,
+      "activeGB": 18.4,
+      "kvKBPerToken": 256,
+      "quality": 77,
+      "maxContext": 32768
+    },
+    {
+      "id": "mlx-community/Qwen3-Coder-30B-A3B-Instruct-4bit",
+      "displayName": "Qwen3 Coder 30B-A3B (MoE)",
+      "roles": ["code"],
+      "paramsB": 30.5,
+      "diskGB": 17.2,
+      "activeGB": 1.86,
+      "kvKBPerToken": 96,
+      "quality": 74,
+      "maxContext": 65536
+    },
+    {
+      "id": "mlx-community/Qwen3-235B-A22B-4bit",
+      "displayName": "Qwen3 235B-A22B (MoE)",
+      "roles": ["general"],
+      "paramsB": 235,
+      "diskGB": 132,
+      "activeGB": 12.4,
+      "kvKBPerToken": 188,
+      "quality": 86,
+      "maxContext": 32768
+    }
+  ]
+}

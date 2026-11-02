@@ -1,0 +1,88 @@
+name: Hearth
+options:
+  bundleIdPrefix: io.github.seckinbeduk
+  deploymentTarget:
+    macOS: "15.0"
+  createIntermediateGroups: true
+
+settings:
+  base:
+    SWIFT_VERSION: "6.0"
+    SWIFT_STRICT_CONCURRENCY: complete
+    MARKETING_VERSION: "0.1.0"
+    CURRENT_PROJECT_VERSION: "1"
+    ARCHS: arm64              # MLX is Apple Silicon only
+    ENABLE_HARDENED_RUNTIME: YES   # Required for notarization
+
+packages:
+  MLXSwiftLM:
+    url: https://github.com/ml-explore/mlx-swift-lm
+    from: "3.31.3"
+  SwiftHuggingFace:            # Model download (HubClient)
+    url: https://github.com/huggingface/swift-huggingface
+    from: "0.9.0"
+  SwiftTransformers:           # Tokenizers
+    url: https://github.com/huggingface/swift-transformers
+    from: "1.3.0"
+
+targets:
+  Hearth:
+    type: application
+    platform: macOS
+    sources:
+      - path: Hearth
+    dependencies:
+      - package: MLXSwiftLM
+        product: MLXLLM
+      - package: MLXSwiftLM
+        product: MLXLMCommon
+      - package: MLXSwiftLM
+        product: MLXHuggingFace
+      - package: SwiftHuggingFace
+        product: HuggingFace
+      - package: SwiftTransformers
+        product: Tokenizers
+    # Not sandboxed on purpose: Hearth reads ~/.ollama, ~/.cache/huggingface and ~/.lmstudio,
+    # and shares the Hugging Face cache with other tools. Distributed with Developer ID, not the App Store.
+    info:
+      path: Hearth/Info.plist
+      properties:
+        CFBundleDisplayName: Hearth
+        CFBundleShortVersionString: $(MARKETING_VERSION)
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
+        LSApplicationCategoryType: public.app-category.developer-tools
+        LSMinimumSystemVersion: "15.0"
+        LSUIElement: true      # Menu bar app, no Dock icon
+        NSHumanReadableCopyright: "© 2026 Seçkin Bedük. MIT License."
+        NSAppTransportSecurity:
+          NSAllowsLocalNetworking: true
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: io.github.seckinbeduk.hearth
+        PRODUCT_NAME: Hearth
+        CODE_SIGN_STYLE: Automatic
+        ENABLE_APP_SANDBOX: NO
+
+  HearthTests:
+    type: bundle.unit-test
+    platform: macOS
+    sources:
+      - path: HearthTests
+    dependencies:
+      - target: Hearth
+    settings:
+      base:
+        GENERATE_INFOPLIST_FILE: YES
+        PRODUCT_BUNDLE_IDENTIFIER: io.github.seckinbeduk.hearth.tests
+        TEST_HOST: "$(BUILT_PRODUCTS_DIR)/Hearth.app/Contents/MacOS/Hearth"
+        BUNDLE_LOADER: "$(TEST_HOST)"
+
+schemes:
+  Hearth:
+    build:
+      targets:
+        Hearth: all
+        HearthTests: [test]
+    test:
+      targets:
+        - HearthTests

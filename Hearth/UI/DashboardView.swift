@@ -47,21 +47,47 @@ struct DashboardView: View {
 
     // MARK: - Header
 
+    /// Hearth first, then the models it answers with, side by side: neither is an add-on to the other.
     private var header: some View {
-        HStack(alignment: .top) {
-            VStack(alignment: .leading, spacing: 6) {
-                Text(model.models.activeModel?.displayName ?? "Apple Intelligence")
+        VStack(alignment: .leading, spacing: 14) {
+            HStack(alignment: .firstTextBaseline, spacing: 10) {
+                Text("Hearth")
                     .font(.largeTitle.weight(.semibold))
-                HStack(spacing: 8) {
-                    Badge(text: statusText, color: model.server.isRunning ? Theme.ready : .secondary)
-                    if model.models.activeModel != nil, model.hardware?.appleIntelligence.isUsable == true {
-                        Badge(text: "+ Apple Intelligence", color: Theme.apple)
+                Badge(text: statusText, color: model.server.isRunning ? Theme.ready : .secondary)
+            }
+            HStack(alignment: .top, spacing: 12) {
+                ModelTile(
+                    symbol: "flame.fill", color: Theme.flame,
+                    name: model.models.activeModel?.displayName ?? "No local model",
+                    modelID: model.models.activeModel == nil ? nil : "hearth",
+                    detail: localDetail,
+                    speed: speedLine
+                ) {
+                    Button(model.models.activeModel == nil ? "Choose a model" : "Change model") {
+                        Task { await model.changeModel() }
                     }
-                    if let speedLine { Text(speedLine).foregroundStyle(.secondary) }
+                    .controlSize(.small)
+                }
+                if model.hardware?.appleIntelligence.isUsable == true {
+                    ModelTile(
+                        symbol: "sparkles", color: Theme.apple,
+                        name: "Apple Intelligence",
+                        modelID: AppleIntelligenceBackend.modelID,
+                        detail: "On-device · free · no download",
+                        speed: model.stats.measuredSpeed[AppleIntelligenceBackend.modelID].map { "Measured \(Format.speed($0))" }
+                    ) { EmptyView() }
                 }
             }
-            Spacer()
-            Button("Change model") { Task { await model.changeModel() } }
+        }
+    }
+
+    private var localDetail: String {
+        switch model.models.state {
+        case .downloading(let p): return "Downloading \(Int(p * 100))%"
+        case .loading: return "Loading into memory"
+        case .failed: return "Couldn't load"
+        case .idle: return model.models.activeModel == nil ? "Runs on your GPU with MLX" : "Not loaded"
+        case .ready: return "MLX · 4-bit · \(Format.bytes(model.monitor.footprintBytes)) in memory"
         }
     }
 
@@ -536,5 +562,39 @@ private struct TryBox: View {
     private struct TryError: LocalizedError {
         let message: String
         var errorDescription: String? { message }
+    }
+}
+
+/// One model Hearth answers with: what it is, how fast it's been, and the name clients send.
+private struct ModelTile<Accessory: View>: View {
+    let symbol: String
+    let color: Color
+    let name: String
+    let modelID: String?
+    let detail: String
+    let speed: String?
+    @ViewBuilder let accessory: () -> Accessory
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(spacing: 8) {
+                Image(systemName: symbol).foregroundStyle(color)
+                Text(name).font(.title3.weight(.semibold))
+                Spacer(minLength: 8)
+                accessory()
+            }
+            Text(detail).font(.callout).foregroundStyle(.secondary)
+            if let speed { Text(speed).font(.callout).foregroundStyle(.secondary) }
+            if let modelID {
+                Text("model: \(modelID)")
+                    .font(.caption.monospaced())
+                    .foregroundStyle(.secondary)
+                    .textSelection(.enabled)
+            }
+        }
+        .padding(14)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(color.opacity(0.07), in: .rect(cornerRadius: 12))
+        .overlay(RoundedRectangle(cornerRadius: 12).strokeBorder(color.opacity(0.18)))
     }
 }

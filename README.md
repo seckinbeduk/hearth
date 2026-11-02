@@ -97,13 +97,18 @@ so `@Generable` and streaming work as they do with Apple Intelligence.
 
 ### Apps that use Hearth
 
-These use Apple Intelligence when it's there and Hearth when you choose it or when it isn't.
-They show up in **Who's using it** with their own icons, so you can see what each one costs.
+These talk to Apple Intelligence through Hearth when it's running, so their usage shows up in
+**Who's using it** with their own icons, and fall back to Apple Intelligence directly when it isn't.
+On macOS 27 this is automatic; on macOS 26, pick Hearth in each app's settings.
 
-- [nib](https://github.com/seckinbeduk/nib): writes your git commit messages. `git config --global nib.engine hearth`
-- [Moniker](https://github.com/seckinbeduk/moniker): names screenshots and downloads for what's inside. Settings → Engine → Hearth
+| App | What it does | Automatic (macOS 27) | macOS 26 |
+|---|---|---|---|
+| [nib](https://github.com/seckinbeduk/nib) | Writes your git commit messages | 0.3.0+ | 0.2.1: `git config --global nib.engine hearth` |
+| [Moniker](https://github.com/seckinbeduk/moniker) | Names screenshots and downloads for what's inside | 0.2.0+ | 0.1.0: Settings → Engine → Hearth |
 
-Building your own? Send an `X-Title` header with your app's name and Hearth lists it by that name.
+Building your own? In Swift, [HearthKit](https://github.com/seckinbeduk/hearthkit) makes Hearth a
+Foundation Models `LanguageModel`. In any other language, use the OpenAI-compatible endpoint above
+and send an `X-Title` header with your app's name; Hearth lists it by that name.
 
 ## How the recommendation works
 

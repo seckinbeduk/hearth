@@ -35,10 +35,10 @@ Requires an Apple Silicon Mac with macOS 15 or later (Apple Intelligence needs m
 
 ## Install
 
-Download `Hearth-0.1.0.dmg` from [Releases](https://github.com/seckinbeduk/hearth/releases), open it and drag
+Download the latest `Hearth-<version>.dmg` from [Releases](https://github.com/seckinbeduk/hearth/releases/latest), open it and drag
 Hearth to Applications.
 
-This first release isn't notarized yet. The first time you open it, macOS will say it can't verify the app:
+Hearth isn't notarized yet. The first time you open it, macOS will say it can't verify the app:
 go to **System Settings → Privacy & Security** and click **Open Anyway**. You only need to do this once.
 You can also [build it yourself](#build).
 

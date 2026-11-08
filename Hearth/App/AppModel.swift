@@ -43,6 +43,9 @@ final class AppModel {
 
     init() {
         server = InferenceService(models: models, stats: stats, agents: agents.endpoint)
+        agents.isServing = { [stats] in stats.isGenerating }
+        // The on-device model answers one request at a time: a summary in flight would delay Hearth's own.
+        stats.onBegin = { [weak agents] in agents?.yieldToInference() }
         if let data = UserDefaults.standard.data(forKey: choiceKey),
            let saved = try? JSONDecoder().decode(Choice.self, from: data) {
             choice = saved

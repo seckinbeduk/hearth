@@ -19,6 +19,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var window: NSWindow?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        #if DEBUG
+        if let index = CommandLine.arguments.firstIndex(of: AgentSummaryCheck.flag) {
+            let folder = CommandLine.arguments.dropFirst(index + 1).first.map { URL(fileURLWithPath: $0) }
+            Task {
+                await AgentSummaryCheck.run(fixtures: folder)
+                exit(0)
+            }
+            return
+        }
+        #endif
         model.showMainWindow = { [weak self] in self?.showMainWindow() }
         statusItem = StatusItemController(model: model)
         model.closePanel = { [weak self] in self?.statusItem?.closePopover() }

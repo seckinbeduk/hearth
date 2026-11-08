@@ -67,11 +67,11 @@ final class StatusItemController: NSObject {
             title = " \(Int(stats.currentRate.rounded())) tok/s"
         } else if model.models.state.isBusy {
             symbol = "arrow.down.circle"
-        } else if model.server.isRunning || model.needsSetup {
-            symbol = "flame"
         } else {
-            symbol = "flame.slash"
+            // Paused: the same flame, dimmed. (There's no "flame.slash" symbol; it left the item blank.)
+            symbol = "flame"
         }
+        button.appearsDisabled = !(model.server.isRunning || model.needsSetup || stats.isGenerating)
         let image = NSImage(systemSymbolName: symbol, accessibilityDescription: "Hearth")
         // A coding agent needs the user (permission, or its turn): a dot on the flame.
         let needsUser = model.agents.isEnabled && model.agents.needsUser

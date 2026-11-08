@@ -30,6 +30,7 @@ final class AppModel {
     let models = LocalModelManager()
     let stats = UsageStats()
     let monitor = SystemMonitor()
+    let agents = AgentsModel()
     let server: InferenceService
 
     private let choiceKey = "hearth.choice.v1"
@@ -41,7 +42,10 @@ final class AppModel {
     var needsSetup: Bool { choice == nil }
 
     init() {
-        server = InferenceService(models: models, stats: stats)
+        server = InferenceService(models: models, stats: stats, agents: agents.endpoint)
+        agents.isServing = { [stats] in stats.isGenerating }
+        // The on-device model answers one request at a time: a summary in flight would delay Hearth's own.
+        stats.onBegin = { [weak agents] in agents?.yieldToInference() }
         if let data = UserDefaults.standard.data(forKey: choiceKey),
            let saved = try? JSONDecoder().decode(Choice.self, from: data) {
             choice = saved
@@ -52,11 +56,13 @@ final class AppModel {
     /// Called once at launch from the menu bar label.
     func launch() async {
         monitor.start()
+        agents.startSweeping()
         guard let choice else {
             await scan()
             return
         }
         await server.start()
+        agents.refreshHookStatus(port: server.port)
         Task { await refreshEnvironment() }
         if case .model(let model) = choice { await models.prepare(model) }
     }

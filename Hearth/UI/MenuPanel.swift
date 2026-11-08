@@ -24,6 +24,7 @@ struct MenuPanel: View {
             servedModels
             clients
             environment
+            agentsSection
             actions
         }
         .padding(14)
@@ -174,6 +175,23 @@ struct MenuPanel: View {
         }
     }
 
+    // MARK: - Agents
+
+    @ViewBuilder
+    private var agentsSection: some View {
+        let nothingConnected = model.agents.nothingConnected
+        if model.agents.isEnabled || nothingConnected {
+            TimelineView(.periodic(from: .now, by: 1)) { context in
+                AgentsSection(rows: model.agents.isEnabled ? model.agents.rows(at: context.date) : [],
+                              now: context.date,
+                              nothingConnected: nothingConnected, unconnected: model.agents.unconnected,
+                              canConnect: model.server.port != nil) { agent in
+                    AgentConnector(agents: model.agents, port: model.server.port).connect(agent)
+                }
+            }
+        }
+    }
+
     // MARK: - Environment
 
     private var environment: some View {
@@ -317,6 +335,8 @@ private struct SettingsMenu: View {
             Toggle("Open at login", isOn: $launchAtLogin)
             Button("Rescan this Mac") { Task { await model.refreshEnvironment() } }
             Divider()
+            AgentsMenuItems(agents: model.agents, port: model.server.port)
+            Divider()
             Button("Quit Hearth") { NSApp.terminate(nil) }
                 .keyboardShortcut("q")
         } label: {
@@ -324,7 +344,10 @@ private struct SettingsMenu: View {
         }
         .menuIndicator(.hidden)
         .fixedSize()
-        .onAppear { launchAtLogin = model.launchAtLogin }
+        .onAppear {
+            launchAtLogin = model.launchAtLogin
+            model.agents.refreshHookStatus(port: model.server.port)
+        }
         .onChange(of: launchAtLogin) { _, value in
             if value != model.launchAtLogin { model.launchAtLogin = value }
         }

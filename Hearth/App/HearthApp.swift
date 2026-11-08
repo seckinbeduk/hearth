@@ -19,9 +19,24 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var window: NSWindow?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        #if DEBUG
+        if let index = CommandLine.arguments.firstIndex(of: AgentsPreviewRender.flag),
+           let folder = CommandLine.arguments.dropFirst(index + 1).first {
+            AgentsPreviewRender.run(to: URL(fileURLWithPath: folder))
+            exit(0)
+        }
+        if let index = CommandLine.arguments.firstIndex(of: AgentSummaryCheck.flag) {
+            let folder = CommandLine.arguments.dropFirst(index + 1).first.map { URL(fileURLWithPath: $0) }
+            Task {
+                await AgentSummaryCheck.run(fixtures: folder)
+                exit(0)
+            }
+            return
+        }
+        #endif
         model.showMainWindow = { [weak self] in self?.showMainWindow() }
         statusItem = StatusItemController(model: model)
-        model.closePanel = { [weak self] in self?.statusItem?.closePopover() }
+        model.closePanel = { [weak self] in self?.statusItem?.closePanel() }
 
         if model.needsSetup { showMainWindow() }
         Task { await model.launch() }
@@ -50,7 +65,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             window.setFrameAutosaveName("HearthMainWindow")
             self.window = window
         }
-        statusItem?.closePopover()
+        statusItem?.closePanel()
         window?.makeKeyAndOrderFront(nil)
         NSApp.activate()
     }

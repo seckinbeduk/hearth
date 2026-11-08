@@ -3,12 +3,12 @@ import SwiftUI
 import Observation
 
 /// The menu bar item: a flame when idle, live tokens/sec while generating.
-/// Click opens MenuPanel in a popover.
+/// Click opens MenuPanel in a panel under the item.
 @MainActor
 final class StatusItemController: NSObject {
     private let model: AppModel
     private let item: NSStatusItem
-    private let popover = NSPopover()
+    private var panel: PanelWindow!
 
     init(model: AppModel) {
         self.model = model
@@ -25,26 +25,20 @@ final class StatusItemController: NSObject {
             button.toolTip = "Hearth"
         }
 
-        let hosting = NSHostingController(rootView: MenuPanel().environment(model))
-        hosting.sizingOptions = [.preferredContentSize]
-        popover.contentViewController = hosting
-        popover.behavior = .transient
-        popover.animates = true
+        panel = PanelWindow(content: MenuPanel().environment(model))
 
         observe()
     }
 
-    func closePopover() {
-        if popover.isShown { popover.performClose(nil) }
+    func closePanel() {
+        panel.dismiss()
     }
 
     @objc private func toggle(_ sender: Any?) {
-        if popover.isShown {
-            popover.performClose(sender)
+        if panel.isShown {
+            panel.dismiss()
         } else if let button = item.button {
-            popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
-            popover.contentViewController?.view.window?.makeKey()
-            NSApp.activate()
+            panel.show(below: button)
         }
     }
 
@@ -67,14 +61,31 @@ final class StatusItemController: NSObject {
             title = " \(Int(stats.currentRate.rounded())) tok/s"
         } else if model.models.state.isBusy {
             symbol = "arrow.down.circle"
-        } else if model.server.isRunning || model.needsSetup {
-            symbol = "flame"
         } else {
-            symbol = "flame.slash"
+            // Paused: the same flame, dimmed. (There's no "flame.slash" symbol; it left the item blank.)
+            symbol = "flame"
         }
+        button.appearsDisabled = !(model.server.isRunning || model.needsSetup || stats.isGenerating)
         let image = NSImage(systemSymbolName: symbol, accessibilityDescription: "Hearth")
-        image?.isTemplate = true
-        button.image = image
+        // A coding agent needs the user (permission, or its turn): a dot on the flame.
+        let needsUser = model.agents.isEnabled && model.agents.needsUser
+        button.image = needsUser ? image.map(Self.withDot) : image
+        button.image?.isTemplate = true
+        button.image?.accessibilityDescription = needsUser ? "Hearth, an agent needs you" : "Hearth"
+        button.toolTip = model.agents.needsUser ? "Hearth: an agent needs you" : "Hearth"
         button.title = title
+    }
+
+    /// The symbol with a small filled dot at its top right; stays a template image (menu bar colours).
+    private static func withDot(_ base: NSImage) -> NSImage {
+        let size = NSSize(width: base.size.width + 3, height: base.size.height)
+        return NSImage(size: size, flipped: false) { rect in
+            base.draw(in: NSRect(x: 0, y: 0, width: base.size.width, height: base.size.height))
+            let d: CGFloat = 6
+            let dot = NSRect(x: rect.maxX - d, y: rect.maxY - d, width: d, height: d)
+            NSColor.black.setFill()
+            NSBezierPath(ovalIn: dot).fill()
+            return true
+        }
     }
 }

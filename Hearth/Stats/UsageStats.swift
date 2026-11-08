@@ -73,6 +73,9 @@ final class UsageStats {
 
     var isGenerating: Bool { activeRequests > 0 }
 
+    /// Called when a request starts, so lower-priority on-device work (agent summaries) can step aside.
+    @ObservationIgnored var onBegin: () -> Void = {}
+
     /// tok/s sampled once a second for the last two minutes (menu bar sparkline).
     private(set) var rateHistory: [Double] = Array(repeating: 0, count: UsageStats.historySeconds)
     static let historySeconds = 120
@@ -113,6 +116,7 @@ final class UsageStats {
     // MARK: - Recording
 
     func begin(client: String, model: String) -> UUID {
+        onBegin()
         rollDayIfNeeded()
         activeRequests += 1
         requestsToday += 1

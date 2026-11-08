@@ -52,14 +52,15 @@ struct AgentsSection: View {
                 }
             }
             if !nothingConnected, !unconnected.isEmpty {
-                HStack(spacing: 10) {
+                // Bordered buttons: ImageRenderer draws link-style buttons as a placeholder.
+                HStack(spacing: 8) {
                     ForEach(unconnected, id: \.self) { agent in
                         Button("Connect \(agent.displayName)…") { connect(agent) }
-                            .buttonStyle(.link)
                             .disabled(!canConnect)
                     }
                 }
-                .font(.caption)
+                .controlSize(.small)
+                .padding(.top, 2)
             }
         }
     }

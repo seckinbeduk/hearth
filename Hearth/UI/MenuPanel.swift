@@ -317,6 +317,8 @@ private struct SettingsMenu: View {
             Toggle("Open at login", isOn: $launchAtLogin)
             Button("Rescan this Mac") { Task { await model.refreshEnvironment() } }
             Divider()
+            AgentsMenuItems(agents: model.agents, port: model.server.port)
+            Divider()
             Button("Quit Hearth") { NSApp.terminate(nil) }
                 .keyboardShortcut("q")
         } label: {
@@ -324,7 +326,10 @@ private struct SettingsMenu: View {
         }
         .menuIndicator(.hidden)
         .fixedSize()
-        .onAppear { launchAtLogin = model.launchAtLogin }
+        .onAppear {
+            launchAtLogin = model.launchAtLogin
+            model.agents.refreshHookStatus(port: model.server.port)
+        }
         .onChange(of: launchAtLogin) { _, value in
             if value != model.launchAtLogin { model.launchAtLogin = value }
         }

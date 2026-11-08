@@ -35,6 +35,23 @@ struct AgentEvent: Sendable, Equatable {
         case subagentStarted
         case subagentStopped
         case notification(type: String)
+
+        /// The case name only, never associated values (debug logging).
+        var name: String {
+            switch self {
+            case .sessionStarted: "sessionStarted"
+            case .sessionEnded: "sessionEnded"
+            case .promptSubmitted: "promptSubmitted"
+            case .toolStarted: "toolStarted"
+            case .toolFinished: "toolFinished"
+            case .permissionRequested: "permissionRequested"
+            case .turnEnded(let tasks): "turnEnded(\(tasks.count))"
+            case .interrupted: "interrupted"
+            case .subagentStarted: "subagentStarted"
+            case .subagentStopped: "subagentStopped"
+            case .notification(let type): "notification(\(type))"
+            }
+        }
     }
 
     struct BackgroundTask: Sendable, Equatable {
@@ -74,6 +91,8 @@ struct AgentEvent: Sendable, Equatable {
     var failed = false
     /// The agent's own session title, when the user set one (Claude Code's `session_title`).
     var title: String?
+    /// Why a session ended (SessionEnd's `reason`: "prompt_input_exit", "other", …).
+    var reason: String?
 }
 
 /// Turns hook payloads into `AgentEvent`s. Both agents use the same field names, so one decoder serves both.
@@ -105,7 +124,7 @@ enum AgentEventDecoder {
                 ? nonEmpty(toolInput?["description"]) : nil,
             prompt: nonEmpty(body["prompt"]),
             lastMessage: nonEmpty(body["last_assistant_message"]),
-            failed: name == "StopFailure", title: nonEmpty(body["session_title"]))
+            failed: name == "StopFailure", title: nonEmpty(body["session_title"]), reason: nonEmpty(body["reason"]))
     }
 
     private static func kind(for name: String, body: [String: Any]) -> AgentEvent.Kind? {

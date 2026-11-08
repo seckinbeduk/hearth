@@ -123,4 +123,35 @@ struct AgentRowsTests {
         #expect(!model.nothingConnected)
         #expect(model.unconnected == [.codex])
     }
+
+    /// A live Codex session that went quiet after its turn stays "your turn" (no SessionEnd), turns
+    /// "Quiet" after 30 minutes and leaves only after 2 hours; Codex's own SessionEnd (reason "other",
+    /// sent when the thread has no client and is idle) ends it.
+    @Test func quietCodexSessionStaysUntilItReallyEnds() throws {
+        let url = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
+            .appendingPathComponent("Fixtures/Agents/codex-cli-session.jsonl")
+        let lines = try String(contentsOf: url, encoding: .utf8).split(separator: "\n")
+        let model = model()
+        let start = Date.now.addingTimeInterval(-60)
+        var lastTime = start
+        // Everything up to the last Stop; no SessionEnd.
+        for line in lines.dropLast() {
+            let object = try #require(try JSONSerialization.jsonObject(with: Data(line.utf8)) as? [String: Any])
+            let body = try JSONSerialization.data(withJSONObject: try #require(object["body"]))
+            lastTime = start.addingTimeInterval(Double(try #require(object["t_ms"] as? Int)) / 1000)
+            if let event = AgentEventDecoder.decode(body, agent: .codex, receivedAt: lastTime) { model.apply(event) }
+        }
+        #expect(model.rows(at: lastTime.addingTimeInterval(5 * 60)).first?.state == .phase(.yourTurn))
+        #expect(model.rows(at: lastTime.addingTimeInterval(31 * 60)).first?.state == .stale)
+        #expect(model.rows(at: lastTime.addingTimeInterval(119 * 60)).count == 1)
+        #expect(model.rows(at: lastTime.addingTimeInterval(121 * 60)).isEmpty)
+
+        let end = try #require(lines.last)
+        let object = try #require(try JSONSerialization.jsonObject(with: Data(end.utf8)) as? [String: Any])
+        let body = try JSONSerialization.data(withJSONObject: try #require(object["body"]))
+        let event = try #require(AgentEventDecoder.decode(body, agent: .codex, receivedAt: lastTime.addingTimeInterval(60)))
+        #expect(event.reason == "other")
+        model.apply(event)
+        #expect(model.rows(at: lastTime.addingTimeInterval(61)).first?.state == .phase(.ended))
+    }
 }

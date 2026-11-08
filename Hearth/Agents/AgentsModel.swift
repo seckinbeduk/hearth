@@ -1,5 +1,6 @@
 import Foundation
 import Observation
+import os
 
 /// The agent sessions the UI shows. Events arrive from the endpoint; a timer drops sessions that are gone.
 /// Also connects and disconnects the agents' hooks, only when the user asks.
@@ -27,6 +28,9 @@ final class AgentsModel {
     @ObservationIgnored private(set) var summaryWork: Task<Void, Never>?
 
     static let summaryInterval: TimeInterval = 20
+    #if DEBUG
+    private static let debugLog = Logger(subsystem: "io.github.seckinbeduk.hearth", category: "agents-debug")
+    #endif
 
     /// Mirrors the stored switch so SwiftUI sees changes (AgentSettings isn't observable).
     private(set) var isEnabled: Bool
@@ -62,6 +66,10 @@ final class AgentsModel {
 
     func apply(_ event: AgentEvent) {
         guard settings.isEnabled else { return }
+        #if DEBUG
+        // Debug builds only: the event's kind and ids, never its content (prompts, tools, messages).
+        Self.debugLog.notice("\(event.agent.rawValue, privacy: .public) \(event.sessionID.prefix(8), privacy: .public) \(event.kind.name, privacy: .public) reason=\(event.reason ?? "-", privacy: .public) sub=\(event.subagentType ?? "-", privacy: .public) cwd=\((event.cwd as NSString?)?.lastPathComponent ?? "-", privacy: .public)")
+        #endif
         store.apply(event)
         if event.kind == .promptSubmitted, event.subagentID == nil {
             workingLines[AgentSession.Key(agent: event.agent, sessionID: event.sessionID)] = nil

@@ -35,7 +35,7 @@ struct AgentsSection: View {
                     .controlSize(.small)
                 }
             } else if rows.isEmpty {
-                Text("No agent sessions right now.")
+                Text("No agent sessions yet. Open sessions show up with their next event.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             } else {

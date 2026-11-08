@@ -170,7 +170,7 @@ Agents off forgets them. Requests to the agent endpoints need a per-install toke
 
 - After you press Esc in Claude Code, the row updates with your next prompt (Claude Code has no hook for an
   interrupt).
-- When Hearth starts, sessions that are already open show up with their next event.
+- When Hearth starts, sessions that are already open show up with their next event (the panel says so).
 
 ## How the recommendation works
 

@@ -49,7 +49,7 @@ struct AgentsGrid: View {
                     connectButtons(AgentKind.allCases)
                 }
             } else if rows.isEmpty {
-                ContentUnavailableView("No agent sessions right now", systemImage: "terminal",
+                ContentUnavailableView("No agent sessions yet", systemImage: "terminal",
                                        description: Text("Sessions show up with their next event."))
             } else {
                 LazyVGrid(columns: [GridItem(.adaptive(minimum: 250, maximum: 420), spacing: 12, alignment: .top)], spacing: 12) {

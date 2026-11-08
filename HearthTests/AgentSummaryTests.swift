@@ -338,6 +338,12 @@ struct AgentSummaryTextTests {
         let plain = AgentSummaryInput(agent: .claudeCode, project: "p", phase: .yourTurn, prompt: nil,
                                       lastMessage: "Düzeltmeleri bitirdim: 119b635 olarak push ettim ve 99 testin hepsi geçiyor.")
         #expect(AgentSummaryLine.line(fromModel: "119b635 olarak push ettim ve 99 testin", for: plain) == "Done: turn finished")
+        #expect(AgentSummaryLine.line(fromModel: "119b635 olarak push ettim ve 99 testin", for: plain,
+                                      lastWorkingLine: "Running git push") == "Running git push")
+        let question = AgentSummaryInput(agent: .claudeCode, project: "p", phase: .yourTurn, prompt: nil,
+                                         lastMessage: "Düzeltmeyi hazırladım. Commit'leyip push edeyim mi?")
+        #expect(AgentSummaryLine.line(fromModel: "Commit'leyip push edeyim mi", for: question,
+                                      lastWorkingLine: "Running git push") == "Asks you a question")
         // A non-ASCII file name from the tool hints is a name, not another language.
         let ceviri = AgentSummaryInput(agent: .claudeCode, project: "p", phase: .yourTurn, prompt: nil,
                                        tools: [.init(name: "Edit", summary: "Çeviri.swift")],

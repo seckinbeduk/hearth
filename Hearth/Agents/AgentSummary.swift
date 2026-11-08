@@ -181,13 +181,17 @@ enum AgentSummaryLine {
     }
 
     /// The model's text made into the line: tidied, with the "your turn" start added by code.
-    static func line(fromModel raw: String, for input: AgentSummaryInput) -> String? {
+    /// `lastWorkingLine` replaces a rejected "your turn" line: what the session was last seen doing beats a
+    /// generic text.
+    static func line(fromModel raw: String, for input: AgentSummaryInput, lastWorkingLine: String? = nil) -> String? {
         guard var text = tidy(raw) else { return nil }
         // Never a quote and never another language: the line must be the model's own English.
         // Copies only matter from text that isn't English (an English echo of a feature name is fine).
         let names = [input.prompt, input.lastMessage] + input.tools.map(\.summary) + [input.pendingTool?.summary]
         let foreign = [input.lastMessage, input.prompt].filter { !isEnglishLooking($0 ?? "") }
         if copies(text, from: foreign) || !isEnglishLooking(text, allowing: names.compactMap { $0 }) {
+            // A finished turn: what it was last doing says more than "turn finished". A question stays a question.
+            if input.turnPrefix == "Done:", let lastWorkingLine { return lastWorkingLine }
             switch input.turnPrefix {
             case "Asks whether", "Asks": return "Asks you a question"
             case "Done:": return "Done: turn finished"

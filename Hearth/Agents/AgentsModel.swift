@@ -193,7 +193,8 @@ final class AgentsModel {
                 }
                 // Dropped meanwhile (Agents turned off, session swept): don't bring it back.
                 if self.isEnabled, self.store.sessions[key] != nil, self.summarized[key]?.phase == phase {
-                    self.summaries[key] = raw.flatMap { AgentSummaryLine.line(fromModel: $0, for: input) }
+                    let working = self.workingLines[key]
+                    self.summaries[key] = raw.flatMap { AgentSummaryLine.line(fromModel: $0, for: input, lastWorkingLine: working) }
                         ?? AgentSummaryLine.fallback(for: input)
                         ?? self.summaries[key]
                     if phase == .running, let line = self.summaries[key] { self.workingLines[key] = line }

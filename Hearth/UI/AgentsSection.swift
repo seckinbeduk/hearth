@@ -191,3 +191,11 @@ struct AgentStateLabel: View {
         }
     }
 }
+
+#if DEBUG
+#Preview("Panel: Agents section") {
+    AgentsSection(rows: AgentsPreviewData.rows, now: AgentsPreviewData.now, nothingConnected: false)
+        .padding(14)
+        .frame(width: 340, alignment: .leading)
+}
+#endif

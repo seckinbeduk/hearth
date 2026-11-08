@@ -39,12 +39,15 @@ enum AgentsPreviewRender {
                                                      unconnected: [.codex]))),
             ("empty", AnyView(AgentsSection(rows: [], now: now, nothingConnected: false))),
             ("connect", AnyView(AgentsSection(rows: [], now: now, nothingConnected: true))),
+            ("cards", AnyView(AgentsGrid(rows: Array(AgentsPreviewData.rows.prefix(6)), now: AgentsPreviewData.now))),
+            ("readme-panel", AnyView(AgentsSection(rows: AgentsPreviewData.rows, now: AgentsPreviewData.now,
+                                                   nothingConnected: false))),
         ]
         for (name, view) in cases {
             for scheme in [ColorScheme.light, .dark] {
                 let content = view
                     .padding(14)
-                    .frame(width: 340, alignment: .leading)
+                    .frame(width: name == "cards" ? 820 : 340, alignment: .leading)
                     .background(scheme == .dark ? Color(white: 0.17) : Color(white: 0.97))
                     .environment(\.colorScheme, scheme)
                 let renderer = ImageRenderer(content: content)

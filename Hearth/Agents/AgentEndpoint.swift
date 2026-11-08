@@ -69,12 +69,24 @@ struct AgentEndpoint: Sendable {
     let settings: AgentSettings
     /// Must not block: called on the server's task, after the response went out.
     let deliver: @Sendable (AgentEvent) -> Void
+    /// The number of sessions shown, for `GET /agents/status` (a self-check; counts only, never content).
+    var sessionCount: @Sendable () async -> Int = { 0 }
 
     static func handles(_ path: String) -> Bool { path.hasPrefix("/agents/") }
 
     func handle(_ request: HTTPRequest, _ responder: HTTPResponder) async {
+        if request.method == "GET", request.path == "/agents/status", isTrusted(request) {
+            let body = #"{"enabled":\#(settings.isEnabled),"sessions":\#(await sessionCount())}"#
+            await responder.respond(status: 200, body: Data(body.utf8))
+            return
+        }
         await responder.respond(status: 200, contentType: "text/plain", body: Data())
         if let event = accept(request, receivedAt: .now) { deliver(event) }
+    }
+
+    /// The token matches and it isn't a browser.
+    private func isTrusted(_ request: HTTPRequest) -> Bool {
+        request.header("Origin") == nil && settings.accepts(request.header("X-Hearth-Token"))
     }
 
     /// The event this request carries, or `nil` if it must be dropped.

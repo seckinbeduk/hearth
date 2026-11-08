@@ -76,7 +76,7 @@ summary can run while a long local job is generating.
 
 Endpoints: `GET /v1/models`, `POST /v1/chat/completions` (also at `/chat/completions`; streaming and
 non-streaming, `stream_options.include_usage`), `GET /health` (also `/` and `/v1`), and `POST /agents/claude-code`,
-`POST /agents/codex` for [Agents](#agents).
+`POST /agents/codex`, `GET /agents/status` (session count, with the install's token) for [Agents](#agents).
 
 Hearth listens on port 8800. If that port is taken it uses the next free one up to 8809, and the panel shows the
 address it's actually on. Set a preferred port with `defaults write io.github.seckinbeduk.hearth hearth.port -int 8900`.
@@ -202,6 +202,7 @@ cd hearth
 ./run.sh          # build and launch (look for the flame in the menu bar)
 ./run.sh test     # unit tests
 ./release.sh      # DMG in dist/
+./scripts/check-agents.sh   # after installing a build: sends a test agent session and checks Hearth counts it
 ```
 
 `release.sh` signs and notarizes when a "Developer ID Application" certificate is in your keychain;

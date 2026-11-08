@@ -95,7 +95,11 @@ struct AgentEndpointServerTests {
     private func withServer(_ settings: AgentSettings,
                             _ body: (Int, Delivered) async throws -> Void) async throws {
         let delivered = Delivered()
-        let endpoint = AgentEndpoint(settings: settings) { delivered.add($0) }
+        let endpoint = {
+            var endpoint = AgentEndpoint(settings: settings) { delivered.add($0) }
+            endpoint.sessionCount = { 3 }
+            return endpoint
+        }()
         let server = HTTPServer { request, responder in
             if AgentEndpoint.handles(request.path) { await endpoint.handle(request, responder) }
             else { await responder.respondError(status: 404, message: "no") }
@@ -149,5 +153,41 @@ struct AgentEndpointServerTests {
             #expect(data.isEmpty)
             #expect(await delivered.waitForCount(1).first?.kind == .promptSubmitted)
         }
+    }
+
+    @Test func statusAnswersCountsOnlyWithTheToken() async throws {
+        let s = settings()
+        try await withServer(s) { port, delivered in
+            func get(_ headers: [String: String]) async throws -> (Int, String) {
+                var request = URLRequest(url: URL(string: "http://127.0.0.1:\(port)/agents/status")!)
+                request.timeoutInterval = 5
+                for (name, value) in headers { request.setValue(value, forHTTPHeaderField: name) }
+                let (data, response) = try await URLSession.shared.data(for: request)
+                return ((response as? HTTPURLResponse)?.statusCode ?? 0, String(decoding: data, as: UTF8.self))
+            }
+            let trusted = try await get(["X-Hearth-Token": s.token])
+            #expect(trusted.0 == 200)
+            #expect(trusted.1 == #"{"enabled":true,"sessions":3}"#)
+            let noToken = try await get([:])
+            #expect(noToken.1.isEmpty)
+            let browser = try await get(["X-Hearth-Token": s.token, "Origin": "https://example.com"])
+            #expect(browser.1.isEmpty)
+            #expect(delivered.all.isEmpty)
+        }
+    }
+
+    @MainActor
+    @Test func statusCountsWhatTheModelShows() async {
+        let settings = AgentSettings(defaults: nil)
+        settings.isEnabled = true
+        let now = Date(timeIntervalSinceReferenceDate: 800_000_000)
+        let model = AgentsModel(settings: settings, now: { now })
+        let endpoint = model.endpoint
+        #expect(await endpoint.sessionCount() == 0)
+        endpoint.deliver(AgentEvent(agent: .claudeCode, sessionID: "check", kind: .promptSubmitted, time: now))
+        for _ in 0..<50 where model.store.sessions.isEmpty { await Task.yield() }
+        #expect(await endpoint.sessionCount() == 1)
+        model.setEnabled(false)
+        #expect(await endpoint.sessionCount() == 0)
     }
 }

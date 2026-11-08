@@ -46,9 +46,13 @@ final class AgentsModel {
 
     /// For the HTTP server: hands events to the main actor without waiting.
     nonisolated var endpoint: AgentEndpoint {
-        AgentEndpoint(settings: settings) { [weak self] event in
+        var endpoint = AgentEndpoint(settings: settings) { [weak self] event in
             Task { @MainActor in self?.apply(event) }
         }
+        endpoint.sessionCount = { [weak self] in
+            await MainActor.run { self.map { $0.store.visibleSessions(at: $0.now()).count } ?? 0 }
+        }
+        return endpoint
     }
 
     /// Turning Agents off also forgets every session (prompts included).

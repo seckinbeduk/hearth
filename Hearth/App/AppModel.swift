@@ -62,6 +62,7 @@ final class AppModel {
             return
         }
         await server.start()
+        agents.refreshHookStatus(port: server.port)
         Task { await refreshEnvironment() }
         if case .model(let model) = choice { await models.prepare(model) }
     }

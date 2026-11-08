@@ -20,6 +20,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         #if DEBUG
+        if let index = CommandLine.arguments.firstIndex(of: AgentsPreviewRender.flag),
+           let folder = CommandLine.arguments.dropFirst(index + 1).first {
+            AgentsPreviewRender.run(to: URL(fileURLWithPath: folder))
+            exit(0)
+        }
         if let index = CommandLine.arguments.firstIndex(of: AgentSummaryCheck.flag) {
             let folder = CommandLine.arguments.dropFirst(index + 1).first.map { URL(fileURLWithPath: $0) }
             Task {

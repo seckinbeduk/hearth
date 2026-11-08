@@ -101,10 +101,12 @@ enum AgentInstaller {
         case needsFix(port: Int?)
     }
 
-    static func status(_ data: Data?, agent: AgentKind, port: Int, token: String) -> Status {
+    /// Without a port (Hearth's server isn't up yet), Hearth's hooks being there counts as connected.
+    static func status(_ data: Data?, agent: AgentKind, port: Int?, token: String) -> Status {
         guard let data, let root = try? OrderedJSON.parse(data) else { return .notConnected }
         let commands = hearthCommands(in: root, agent: agent)
         if commands.isEmpty { return .notConnected }
+        guard let port else { return .connected }
         let expected = command(agent: agent, port: port, token: token)
         let complete = Set(events(for: agent)).isSubset(of: Set(commands.map(\.event)))
         if complete, commands.allSatisfy({ $0.command == expected }) { return .connected }

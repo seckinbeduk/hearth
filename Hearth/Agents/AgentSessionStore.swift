@@ -69,6 +69,8 @@ struct AgentSession: Sendable, Equatable, Identifiable {
     var permissionHint: String?
     /// The last turn was cut short (Codex Interrupt, Claude Code StopFailure).
     var stoppedEarly = false
+    /// The agent's own title for the session, if any; shown until the first summary.
+    var title: String?
     /// Background work that doesn't hold the turn, e.g. a dev server: shown as "running: …" in the row.
     var backgroundNote: String?
 
@@ -92,6 +94,9 @@ struct AgentSessionStore: Sendable, Equatable {
     static let endedHiddenAfter: TimeInterval = 10 * 60
     static let maxSessions = 100
     static let recentToolCount = 5
+    /// "Your turn" lights the badge only after this long: a turn that ends and goes on at once
+    /// (an automatic follow-up) shouldn't flash it. Permission lights it at once.
+    static let yourTurnBadgeDelay: TimeInterval = 10
 
     private(set) var sessions: [AgentSession.Key: AgentSession] = [:]
 
@@ -100,6 +105,7 @@ struct AgentSessionStore: Sendable, Equatable {
         guard var session = sessions[key] ?? newSession(for: event, key: key) else { return }
         session.lastEventAt = max(session.lastEventAt, event.time)
         if let cwd = event.cwd, event.subagentID == nil { session.cwd = cwd }
+        if let title = event.title, event.subagentID == nil { session.title = title }
 
         if let subagentID = event.subagentID, event.kind != .subagentStarted, event.kind != .subagentStopped {
             applySubagentEvent(event, id: subagentID, to: &session)
@@ -122,9 +128,15 @@ struct AgentSessionStore: Sendable, Equatable {
         return .phase(session.effectivePhase)
     }
 
-    /// The menu bar badge: any visible session needs the user.
+    /// The menu bar badge: any visible session needs the user ("your turn" after a short delay).
     func needsUser(at now: Date) -> Bool {
-        visibleSessions(at: now).contains { displayState(of: $0, at: now).needsUser }
+        visibleSessions(at: now).contains { session in
+            switch displayState(of: session, at: now) {
+            case .phase(.permission): true
+            case .phase(.yourTurn): now.timeIntervalSince(session.phaseSince) >= Self.yourTurnBadgeDelay
+            default: false
+            }
+        }
     }
 
     /// Drops hidden sessions so memory stays bounded. Call from a timer.

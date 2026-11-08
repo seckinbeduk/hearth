@@ -70,6 +70,8 @@ struct AgentEvent: Sendable, Equatable {
     var lastMessage: String?
     /// The turn ended on an error (Claude Code's StopFailure) rather than normally.
     var failed = false
+    /// The agent's own session title, when the user set one (Claude Code's `session_title`).
+    var title: String?
 }
 
 /// Turns hook payloads into `AgentEvent`s. Both agents use the same field names, so one decoder serves both.
@@ -98,7 +100,7 @@ enum AgentEventDecoder {
             toolSummary: toolInput.flatMap(summary(of:)),
             prompt: nonEmpty(body["prompt"]),
             lastMessage: nonEmpty(body["last_assistant_message"]),
-            failed: name == "StopFailure")
+            failed: name == "StopFailure", title: nonEmpty(body["session_title"]))
     }
 
     private static func kind(for name: String, body: [String: Any]) -> AgentEvent.Kind? {

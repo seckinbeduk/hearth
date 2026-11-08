@@ -7,10 +7,10 @@ import Observation
 @Observable
 final class AgentsModel {
     private(set) var store = AgentSessionStore()
-    /// Events accepted since launch; a debug count until the Agents section exists.
-    private(set) var eventCount = 0
     /// Hook state per agent, refreshed when the panel opens and after Connect / Disconnect.
     private(set) var hookStatus: [AgentKind: AgentInstaller.Status] = [:]
+    /// The menu bar badge: a session waits for permission, or it has been the user's turn for 10 s.
+    private(set) var needsUser = false
     /// The one-line summary per session (Apple Intelligence, or the last tool as a fallback).
     private(set) var summaries: [AgentSession.Key: String] = [:]
     let settings: AgentSettings
@@ -51,9 +51,9 @@ final class AgentsModel {
     func setEnabled(_ enabled: Bool) {
         settings.isEnabled = enabled
         isEnabled = enabled
+        defer { refreshBadge() }
         if !enabled {
             store = AgentSessionStore()
-            eventCount = 0
             summaries = [:]
             summarized = [:]
             workingLines = [:]
@@ -63,10 +63,10 @@ final class AgentsModel {
     func apply(_ event: AgentEvent) {
         guard settings.isEnabled else { return }
         store.apply(event)
-        eventCount += 1
         if event.kind == .promptSubmitted, event.subagentID == nil {
             workingLines[AgentSession.Key(agent: event.agent, sessionID: event.sessionID)] = nil
         }
+        refreshBadge()
         summarizeNext()
     }
 
@@ -83,13 +83,57 @@ final class AgentsModel {
                 self.workingLines = self.workingLines.filter { keys.contains($0.key) }
             }
         }
-        // Retries summaries skipped or cancelled while Hearth was serving a request.
+        // Retries summaries skipped or cancelled while Hearth was serving a request; lights the delayed badge.
         Task { [weak self] in
             while !Task.isCancelled {
-                try? await Task.sleep(for: .seconds(5))
+                try? await Task.sleep(for: .seconds(2))
                 guard let self else { return }
+                self.refreshBadge()
                 self.summarizeNext()
             }
+        }
+    }
+
+    func refreshBadge() {
+        let value = isEnabled && store.needsUser(at: now())
+        if value != needsUser { needsUser = value }
+    }
+
+    /// Nothing connected yet (known only after the hook files were read once).
+    var nothingConnected: Bool {
+        !hookStatus.isEmpty && hookStatus.values.allSatisfy { $0 == .notConnected }
+    }
+
+    /// What the panel shows, numbered per project ("nib", "nib #2"): the sessions that need the user first,
+    /// then by start time, newest first, so rows don't jump on every tool event.
+    func rows(at time: Date) -> [AgentRow] {
+        let sessions = store.visibleSessions(at: time)
+        var number: [String: Int] = [:]
+        var names: [AgentSession.Key: String] = [:]
+        for session in sessions.sorted(by: { $0.startedAt < $1.startedAt }) {
+            let project = session.project.isEmpty ? session.agent.displayName : session.project
+            number[project, default: 0] += 1
+            names[session.id] = number[project] == 1 ? project : "\(project) #\(number[project]!)"
+        }
+        func rank(_ state: AgentDisplayState) -> Int {
+            switch state {
+            case .phase(.permission): 0
+            case .phase(.yourTurn): 1
+            case .phase(.running), .phase(.waitingOn): 2
+            case .phase(.idle): 3
+            case .stale: 4
+            case .phase(.ended): 5
+            }
+        }
+        let ordered = sessions.sorted { a, b in
+            let (ra, rb) = (rank(store.displayState(of: a, at: time)), rank(store.displayState(of: b, at: time)))
+            return ra != rb ? ra < rb : a.startedAt > b.startedAt
+        }
+        return ordered.map { session in
+            AgentRow(id: session.id, agent: session.agent, name: names[session.id] ?? session.project,
+                     state: store.displayState(of: session, at: time), since: session.phaseSince,
+                     line: summaries[session.id] ?? session.title, note: session.backgroundNote,
+                     children: session.subagents)
         }
     }
 
@@ -156,7 +200,6 @@ final class AgentsModel {
     // MARK: - Hooks
 
     func refreshHookStatus(port: Int?) {
-        guard let port else { return }
         for agent in AgentKind.allCases {
             let data = try? Data(contentsOf: AgentInstaller.settingsURL(for: agent, home: home))
             hookStatus[agent] = AgentInstaller.status(data, agent: agent, port: port, token: settings.token)
@@ -192,4 +235,16 @@ final class AgentsModel {
     static func displayPath(_ url: URL) -> String {
         url.path.replacingOccurrences(of: FileManager.default.homeDirectoryForCurrentUser.path, with: "~")
     }
+}
+
+/// One session row in the panel.
+struct AgentRow: Identifiable, Equatable {
+    let id: AgentSession.Key
+    let agent: AgentKind
+    let name: String
+    let state: AgentDisplayState
+    let since: Date
+    let line: String?
+    let note: String?
+    let children: [AgentSubagent]
 }

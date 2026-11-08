@@ -73,8 +73,25 @@ final class StatusItemController: NSObject {
             symbol = "flame.slash"
         }
         let image = NSImage(systemSymbolName: symbol, accessibilityDescription: "Hearth")
-        image?.isTemplate = true
-        button.image = image
+        // A coding agent needs the user (permission, or its turn): a dot on the flame.
+        let needsUser = model.agents.isEnabled && model.agents.needsUser
+        button.image = needsUser ? image.map(Self.withDot) : image
+        button.image?.isTemplate = true
+        button.image?.accessibilityDescription = needsUser ? "Hearth, an agent needs you" : "Hearth"
+        button.toolTip = model.agents.needsUser ? "Hearth: an agent needs you" : "Hearth"
         button.title = title
+    }
+
+    /// The symbol with a small filled dot at its top right; stays a template image (menu bar colours).
+    private static func withDot(_ base: NSImage) -> NSImage {
+        let size = NSSize(width: base.size.width + 3, height: base.size.height)
+        return NSImage(size: size, flipped: false) { rect in
+            base.draw(in: NSRect(x: 0, y: 0, width: base.size.width, height: base.size.height))
+            let d: CGFloat = 6
+            let dot = NSRect(x: rect.maxX - d, y: rect.maxY - d, width: d, height: d)
+            NSColor.black.setFill()
+            NSBezierPath(ovalIn: dot).fill()
+            return true
+        }
     }
 }

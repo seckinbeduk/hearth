@@ -109,7 +109,8 @@ struct AgentSessionReplayTests {
         #expect(try only(fixture.replay(through: 36)).phase == .running)
         let store = fixture.replay(through: 39)
         #expect(try only(store).phase == .yourTurn)
-        #expect(store.needsUser(at: fixture.time(ofLine: 39)))
+        #expect(!store.needsUser(at: fixture.time(ofLine: 39)))                        // not in the first 10 s
+        #expect(store.needsUser(at: fixture.time(ofLine: 39).addingTimeInterval(10)))
     }
 
     @Test func sessionEndsOnExit() throws {
@@ -260,6 +261,31 @@ struct AgentSessionClockTests {
         return e
     }
 
+    @Test func yourTurnBadgeWaitsTenSecondsAndPermissionDoesnt() {
+        let t0 = Date(timeIntervalSinceReferenceDate: 0)
+        var store = AgentSessionStore()
+        store.apply(event(.promptSubmitted, at: t0))
+        store.apply(event(.turnEnded(backgroundTasks: []), at: t0))
+        #expect(!store.needsUser(at: t0.addingTimeInterval(9)))
+        // It runs again within the 10 s: no badge at all.
+        store.apply(event(.promptSubmitted, at: t0.addingTimeInterval(5)))
+        #expect(!store.needsUser(at: t0.addingTimeInterval(12)))
+        store.apply(event(.turnEnded(backgroundTasks: []), at: t0.addingTimeInterval(20)))
+        #expect(store.needsUser(at: t0.addingTimeInterval(30)))
+        store.apply(event(.permissionRequested, at: t0.addingTimeInterval(31)))
+        #expect(store.needsUser(at: t0.addingTimeInterval(31)))
+    }
+
+    @Test func keepsTheAgentsOwnTitle() {
+        var store = AgentSessionStore()
+        var start = event(.promptSubmitted, at: .now)
+        start.title = "Retry work"
+        store.apply(start)
+        #expect(store.sessions.values.first?.title == "Retry work")
+        #expect(AgentEventDecoder.decode(Data(#"{"session_id":"s","hook_event_name":"UserPromptSubmit","session_title":"T"}"#.utf8),
+                                         agent: .claudeCode, receivedAt: .now)?.title == "T")
+    }
+
     @Test func newSessionIsIdleWithoutBadge() {
         var store = AgentSessionStore()
         store.apply(event(.sessionStarted, at: .now))
@@ -340,7 +366,7 @@ struct AgentSessionClockTests {
         let session = store.sessions.values.first!
         #expect(session.phase == .yourTurn)
         #expect(session.backgroundNote == "npm run dev")
-        #expect(store.needsUser(at: t0))
+        #expect(store.needsUser(at: t0.addingTimeInterval(10)))
         // The note goes with the next prompt.
         store.apply(event(.promptSubmitted, at: t0))
         #expect(store.sessions.values.first?.backgroundNote == nil)

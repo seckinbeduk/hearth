@@ -133,12 +133,14 @@ struct AgentSummaryInput: Sendable, Equatable {
     var task: String {
         switch turnPrefix {
         case "Asks whether":
-            "only the rest of the sentence \"The agent asks whether …\": what it asks the user, a few words"
+            "only the rest of the sentence \"The agent asks whether …\": what it asks the user, a few words "
+                + "in English"
         case "Asks":
             "only the rest of the sentence \"The agent asks …\", starting with which, what, how, where, when, "
                 + "who or why: what it asks the user, a few words"
         case "Done:":
-            "only what the agent finished or found, as a short phrase, judging by its last message"
+            "only what the agent finished or found, as a short phrase, judging by its last message. "
+                + "In English; translate if the message isn't English"
         default:
             "what the agent is doing right now, starting with a verb in -ing form (Editing, Running, Reading, "
                 + "Writing, Searching, Planning, Fixing). Describe the work; don't repeat the user's request"
@@ -339,7 +341,8 @@ struct AppleAgentSummarizer: AgentSummarizer {
     // No example sentences here: a small model copies them when the input is thin (nib's lesson).
     static let instructions = """
         You watch a coding agent working on a software project. Write one line about it, using only facts \
-        from the input, in the form the "Write" line asks for. English, at most 70 characters. \
+        from the input, in the form the "Write" line asks for. Always English: translate when the input is \
+        in another language. At most 70 characters. \
         No quotes, no file contents, no secrets, no long commands. If the input is too vague to say more, \
         name the kind of step (a shell command, a file edit, a search). \
         A latest message marked automatic came from the agent itself, not from the user.

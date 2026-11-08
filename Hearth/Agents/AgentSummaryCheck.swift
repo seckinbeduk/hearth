@@ -130,6 +130,15 @@ enum AgentSummaryCheck {
                 e(.turnEnded(backgroundTasks: [.init(id: "t1", type: "shell", status: "running", description: "npm run dev")]),
                   message: "The dev server is running at localhost:5173. Open /settings to try the new page."),
             ]),
+            ("turn finished, Turkish message", [
+                e(.promptSubmitted, prompt: "Reviewer düzeltmelerini işle ve commit'le."),
+                e(.toolStarted, tool: "Bash", input: ["command": "git commit -m \"fix(agents): polish the rows\""]),
+                e(.turnEnded(backgroundTasks: []), message: "Reviewer düzeltmelerini işledim, 119b635 olarak push ettim. 99 testin hepsi geçiyor."),
+            ]),
+            ("turn finished, Turkish question", [
+                e(.promptSubmitted, prompt: "Paneldeki hatayı düzelt."),
+                e(.turnEnded(backgroundTasks: []), message: "Düzeltmeyi hazırladım. Commit'leyip push edeyim mi?"),
+            ]),
             ("just a prompt", [
                 e(.promptSubmitted, prompt: "Plan the database migration that moves user settings into their own table."),
             ]),

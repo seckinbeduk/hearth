@@ -74,6 +74,8 @@ struct AgentConnector {
         alert.informativeText = text
         alert.addButton(withTitle: "Connect")
         alert.addButton(withTitle: "Cancel")
+        // Above the panel (a pop-up-menu-level window), not hidden behind it.
+        alert.window.level = .popUpMenu
         NSApp.activate()
         return alert.runModal() == .alertFirstButtonReturn
     }
@@ -82,6 +84,7 @@ struct AgentConnector {
         let alert = NSAlert()
         alert.messageText = title
         alert.informativeText = text
+        alert.window.level = .popUpMenu
         NSApp.activate()
         alert.runModal()
     }

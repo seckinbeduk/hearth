@@ -36,7 +36,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         #endif
         model.showMainWindow = { [weak self] in self?.showMainWindow() }
         statusItem = StatusItemController(model: model)
-        model.closePanel = { [weak self] in self?.statusItem?.closePopover() }
+        model.closePanel = { [weak self] in self?.statusItem?.closePanel() }
 
         if model.needsSetup { showMainWindow() }
         Task { await model.launch() }
@@ -65,7 +65,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             window.setFrameAutosaveName("HearthMainWindow")
             self.window = window
         }
-        statusItem?.closePopover()
+        statusItem?.closePanel()
         window?.makeKeyAndOrderFront(nil)
         NSApp.activate()
     }

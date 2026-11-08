@@ -154,4 +154,47 @@ struct AgentRowsTests {
         model.apply(event)
         #expect(model.rows(at: lastTime.addingTimeInterval(61)).first?.state == .phase(.ended))
     }
+
+    @Test func recentActivityKeepsTwentyMaskedEvents() {
+        let model = model()
+        let t0 = Date.now.addingTimeInterval(-100)
+        model.apply(event(.promptSubmitted, "s", cwd: "/p/app", at: t0))
+        for i in 0..<30 {
+            var started = event(.toolStarted, "s", cwd: nil, at: t0.addingTimeInterval(Double(i)))
+            started.toolName = "Bash"
+            started.toolSummary = "API_TOKEN=secret\(i) ./deploy.sh"
+            model.apply(started)
+        }
+        let row = model.rows(at: .now).first
+        #expect(row?.activity.count == AgentSessionStore.activityLimit)
+        #expect(row?.activity.allSatisfy { !($0.hint ?? "").contains("secret") } == true)
+        #expect(row?.activity.last?.title == "Tool started · Bash · API_TOKEN=… ./deploy.sh")
+        // Turning Agents off forgets it with the sessions.
+        model.setEnabled(false)
+        model.setEnabled(true)
+        #expect(model.rows(at: .now).isEmpty)
+    }
+
+    @Test func activityMarksStateChangesAndAutomaticPrompts() {
+        let model = model()
+        let t0 = Date.now.addingTimeInterval(-10)
+        model.apply(event(.promptSubmitted, "s", cwd: "/p/app", at: t0))
+        model.apply(event(.turnEnded(backgroundTasks: []), "s", cwd: nil, at: t0.addingTimeInterval(1)))
+        let row = model.rows(at: .now).first
+        #expect(row?.activity.map(\.newPhase) == [.running, .yourTurn])
+        #expect(row?.activity.map(\.title) == ["Prompt", "Turn ended"])
+        #expect(AgentsModel.promptLine("<agent-message from=\"x\">done</agent-message>") == "(a message from the agent itself)")
+        #expect(AgentsModel.promptLine("Deploy with TOKEN=abc\nsecond line") == "Deploy with TOKEN=…")
+    }
+
+    @Test func lateEventsAfterTheEndStayOutOfTheActivity() {
+        let model = model()
+        let t0 = Date.now.addingTimeInterval(-10)
+        model.apply(event(.promptSubmitted, "s", cwd: "/p/app", at: t0))
+        model.apply(event(.sessionEnded, "s", cwd: nil, at: t0.addingTimeInterval(1)))
+        var late = event(.toolFinished, "s", cwd: nil, at: t0.addingTimeInterval(2))
+        late.toolName = "Bash"
+        model.apply(late)
+        #expect(model.rows(at: .now).first?.activity.map(\.title) == ["Prompt", "Session ended"])
+    }
 }

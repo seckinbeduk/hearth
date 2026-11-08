@@ -5,6 +5,12 @@ struct DashboardView: View {
     @Environment(AppModel.self) private var model
     @State private var snippet: Snippet = .curl
     @State private var chosenTarget: String?
+    @State private var tab: Tab = .server
+
+    private enum Tab: String, CaseIterable, Identifiable {
+        case server = "Server", agents = "Agents"
+        var id: String { rawValue }
+    }
 
     /// The models this endpoint answers with.
     private struct Target: Identifiable, Hashable {
@@ -24,12 +30,23 @@ struct DashboardView: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 18) {
-                header
-                endpointCard
-                SavingsCard()
-                TryBox(baseURL: model.server.baseURL, model: modelName)
-                RequestsCard()
-                if let hw = model.hardware { footer(hw) }
+                Picker("Show", selection: $tab) {
+                    ForEach(Tab.allCases) { Text($0.rawValue).tag($0) }
+                }
+                .pickerStyle(.segmented)
+                .labelsHidden()
+                .fixedSize()
+                switch tab {
+                case .server:
+                    header
+                    endpointCard
+                    SavingsCard()
+                    TryBox(baseURL: model.server.baseURL, model: modelName)
+                    RequestsCard()
+                    if let hw = model.hardware { footer(hw) }
+                case .agents:
+                    AgentsTab()
+                }
             }
             .padding(32)
             .frame(maxWidth: 860)

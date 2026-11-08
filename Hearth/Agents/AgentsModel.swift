@@ -107,6 +107,13 @@ final class AgentsModel {
         if value != needsUser { needsUser = value }
     }
 
+    /// The first line of a prompt, masked and cut short; an automatic turn shows as such.
+    static func promptLine(_ prompt: String) -> String {
+        if AgentSummaryInput.isAutomatic(prompt) { return "(a message from the agent itself)" }
+        let first = prompt.split(whereSeparator: \.isNewline).first.map(String.init) ?? prompt
+        return AgentSummaryInput.clean(first, limit: 80)
+    }
+
     /// Nothing connected yet (known only after the hook files were read once).
     var nothingConnected: Bool {
         !hookStatus.isEmpty && hookStatus.values.allSatisfy { $0 == .notConnected }
@@ -154,7 +161,8 @@ final class AgentsModel {
                 : (summaries[session.id] ?? session.title)
             return AgentRow(id: session.id, agent: session.agent, name: name, state: state, since: session.phaseSince,
                             line: line, note: session.phase == .ended ? nil : session.backgroundNote,
-                            children: session.subagents)
+                            children: session.subagents, cwd: session.cwd, activity: session.activity,
+                            latestPrompt: session.lastPrompt.map(Self.promptLine))
         }
     }
 
@@ -269,4 +277,8 @@ struct AgentRow: Identifiable, Equatable {
     let line: String?
     let note: String?
     let children: [AgentSubagent]
+    var cwd: String? = nil
+    var activity: [AgentActivity] = []
+    /// The masked first line of the latest prompt, at most; never the whole prompt.
+    var latestPrompt: String? = nil
 }

@@ -75,6 +75,8 @@ struct AgentSession: Sendable, Equatable, Identifiable {
     var title: String?
     /// Background work that doesn't hold the turn, e.g. a dev server: shown as "running: …" in the row.
     var backgroundNote: String?
+    /// The last events, newest last, for the Details window: what happened, never prompts or messages.
+    var activity: [AgentActivity] = []
 
     /// Where the session started; the project it's named after.
     var firstCwd: String?
@@ -121,10 +123,15 @@ struct AgentSessionStore: Sendable, Equatable {
         }
         if let title = event.title, event.subagentID == nil { session.title = title }
 
+        let phaseBefore = session.effectivePhase
         if let subagentID = event.subagentID, event.kind != .subagentStarted, event.kind != .subagentStopped {
             applySubagentEvent(event, id: subagentID, to: &session)
         } else {
             applyMainEvent(event, to: &session)
+        }
+        // Late events for an ended session change nothing and don't belong in its history.
+        if !(phaseBefore == .ended && session.phase == .ended) {
+            record(event, phaseBefore: phaseBefore, in: &session)
         }
         sessions[key] = session
         trim()
@@ -276,6 +283,20 @@ struct AgentSessionStore: Sendable, Equatable {
         }
     }
 
+    static let activityLimit = 20
+
+    private func record(_ event: AgentEvent, phaseBefore: AgentPhase, in session: inout AgentSession) {
+        let phase = session.effectivePhase
+        session.activity.append(AgentActivity(
+            time: event.time, kind: event.kind.name, subagent: event.subagentType, tool: event.toolName,
+            // Same masking as the summaries: secrets out, paths cut to file names.
+            hint: event.toolSummary.map { AgentSummaryInput.clean($0, limit: 80) },
+            newPhase: phase != phaseBefore ? phase : nil))
+        if session.activity.count > Self.activityLimit {
+            session.activity.removeFirst(session.activity.count - Self.activityLimit)
+        }
+    }
+
     private static func isHidden(_ session: AgentSession, at now: Date) -> Bool {
         let quiet = now.timeIntervalSince(session.lastEventAt)
         return session.phase == .ended ? quiet > endedHiddenAfter : quiet > hiddenAfter
@@ -285,5 +306,45 @@ struct AgentSessionStore: Sendable, Equatable {
         guard sessions.count > Self.maxSessions else { return }
         let oldest = sessions.values.sorted { $0.lastEventAt < $1.lastEventAt }.prefix(sessions.count - Self.maxSessions)
         for session in oldest { sessions[session.id] = nil }
+    }
+}
+
+/// One line of a session's recent activity (Details window). Kind names and masked hints only.
+struct AgentActivity: Sendable, Equatable, Identifiable {
+    let id = UUID()
+    let time: Date
+    let kind: String
+    let subagent: String?
+    let tool: String?
+    let hint: String?
+    /// Set when this event changed the session's state.
+    let newPhase: AgentPhase?
+
+    static func == (a: AgentActivity, b: AgentActivity) -> Bool { a.id == b.id }
+
+    /// "Tool finished · Bash · git log", "Turn ended", "reviewer: Tool started · Read · Package.swift".
+    var title: String {
+        let base = Self.label(kind)
+        let tool = [tool, hint].compactMap { $0 }.joined(separator: " · ")
+        let line = tool.isEmpty ? base : "\(base) · \(tool)"
+        return subagent.map { "\($0): \(line)" } ?? line
+    }
+
+    static func label(_ kind: String) -> String {
+        let name = kind.split(separator: "(").first.map(String.init) ?? kind
+        return switch name {
+        case "sessionStarted": "Session started"
+        case "sessionEnded": "Session ended"
+        case "promptSubmitted": "Prompt"
+        case "toolStarted": "Tool started"
+        case "toolFinished": "Tool finished"
+        case "permissionRequested": "Asks permission"
+        case "turnEnded": "Turn ended"
+        case "interrupted": "Interrupted"
+        case "subagentStarted": "Subagent started"
+        case "subagentStopped": "Subagent stopped"
+        case "notification": "Notification"
+        default: name
+        }
     }
 }

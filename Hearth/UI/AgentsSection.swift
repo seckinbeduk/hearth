@@ -1,4 +1,5 @@
 import SwiftUI
+import AppKit
 
 /// The Agents section in the panel: one row per coding-agent session, subagents under their parent.
 struct AgentsSection: View {
@@ -6,6 +7,8 @@ struct AgentsSection: View {
     let now: Date
     /// No agent is connected yet: offer to connect instead of an empty list.
     let nothingConnected: Bool
+    /// Agents not connected yet, offered below the rows (one agent connected doesn't hide the other).
+    var unconnected: [AgentKind] = []
     /// Connecting needs Hearth's port, so the server must be up.
     var canConnect = true
     var connect: (AgentKind) -> Void = { _ in }
@@ -48,6 +51,16 @@ struct AgentsSection: View {
                         .foregroundStyle(.tertiary)
                 }
             }
+            if !nothingConnected, !unconnected.isEmpty {
+                HStack(spacing: 10) {
+                    ForEach(unconnected, id: \.self) { agent in
+                        Button("Connect \(agent.displayName)…") { connect(agent) }
+                            .buttonStyle(.link)
+                            .disabled(!canConnect)
+                    }
+                }
+                .font(.caption)
+            }
         }
     }
 }
@@ -60,7 +73,7 @@ struct AgentRowView: View {
         VStack(alignment: .leading, spacing: 3) {
             HStack(alignment: .firstTextBaseline, spacing: 6) {
                 Image(systemName: Self.symbol(for: row.agent))
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(Self.tint(for: row.agent))
                     .frame(width: 16)
                     .help(row.agent.displayName)
                     .accessibilityLabel(row.agent.displayName)
@@ -110,10 +123,18 @@ struct AgentRowView: View {
         .padding(.vertical, 6)
     }
 
+    /// Different shape and colour per agent, so the two never look alike at a glance.
     static func symbol(for agent: AgentKind) -> String {
         switch agent {
-        case .claudeCode: "terminal"
-        case .codex: "chevron.left.forwardslash.chevron.right"
+        case .claudeCode: "terminal.fill"
+        case .codex: "curlybraces.square.fill"
+        }
+    }
+
+    static func tint(for agent: AgentKind) -> Color {
+        switch agent {
+        case .claudeCode: Color(red: 0.80, green: 0.47, blue: 0.33)
+        case .codex: Color(red: 0.20, green: 0.60, blue: 0.62)
         }
     }
 
@@ -139,10 +160,20 @@ struct AgentStateLabel: View {
             .padding(.horizontal, compact ? 5 : 7)
             .padding(.vertical, 2)
             .foregroundStyle(filled ? Color.white : color)
-            .background(filled ? color : color.opacity(0.14), in: .capsule)
+            .background(filled ? color : color.opacity(0.2), in: .capsule)
             .lineLimit(1)
             .fixedSize()
     }
+
+    /// Text colours that keep their contrast on the tinted capsule in both themes.
+    static let workingText = Color(nsColor: NSColor(name: nil) { appearance in
+        appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
+            ? NSColor(red: 0.66, green: 0.71, blue: 1.0, alpha: 1) : NSColor(red: 0.16, green: 0.22, blue: 0.68, alpha: 1)
+    })
+    static let yourTurnText = Color(nsColor: NSColor(name: nil) { appearance in
+        appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
+            ? NSColor(red: 0.45, green: 0.86, blue: 0.60, alpha: 1) : NSColor(red: 0.03, green: 0.35, blue: 0.18, alpha: 1)
+    })
 
     static func style(for state: AgentDisplayState) -> (String, Color, Bool) {
         switch state {
@@ -150,9 +181,9 @@ struct AgentStateLabel: View {
         case .phase(let phase):
             switch phase {
             case .idle: ("Started", .secondary, false)
-            case .running: ("Working", Theme.apple, false)
+            case .running: ("Working", Self.workingText, false)
             case .permission: ("Permission", Theme.flame, true)
-            case .yourTurn: ("Your turn", Theme.ready, false)
+            case .yourTurn: ("Your turn", Self.yourTurnText, false)
             case .waitingOn: ("Waiting", .secondary, false)
             case .ended: ("Ended", .secondary, false)
             }

@@ -104,6 +104,11 @@ final class AgentsModel {
         !hookStatus.isEmpty && hookStatus.values.allSatisfy { $0 == .notConnected }
     }
 
+    /// Agents whose hooks aren't installed, once that's known: the panel offers to connect them.
+    var unconnected: [AgentKind] {
+        AgentKind.allCases.filter { hookStatus[$0] == .notConnected }
+    }
+
     /// What the panel shows, numbered per project ("nib", "nib #2"): the sessions that need the user first,
     /// then by start time, newest first, so rows don't jump on every tool event.
     func rows(at time: Date) -> [AgentRow] {
@@ -130,10 +135,18 @@ final class AgentsModel {
             return ra != rb ? ra < rb : a.startedAt > b.startedAt
         }
         return ordered.map { session in
-            AgentRow(id: session.id, agent: session.agent, name: names[session.id] ?? session.project,
-                     state: store.displayState(of: session, at: time), since: session.phaseSince,
-                     line: summaries[session.id] ?? session.title, note: session.backgroundNote,
-                     children: session.subagents)
+            // The parent's own state; a subagent asking for permission shows the pill on the child row.
+            var state = store.displayState(of: session, at: time)
+            if state == .phase(.permission), session.phase != .permission { state = .phase(session.phase) }
+            var name = names[session.id] ?? session.project
+            if let current = session.currentProject { name += " → \(current)" }
+            // An ended session keeps its last working line, never a stale permission or "your turn" line.
+            let line = session.phase == .ended
+                ? (workingLines[session.id] ?? "Session ended")
+                : (summaries[session.id] ?? session.title)
+            return AgentRow(id: session.id, agent: session.agent, name: name, state: state, since: session.phaseSince,
+                            line: line, note: session.phase == .ended ? nil : session.backgroundNote,
+                            children: session.subagents)
         }
     }
 

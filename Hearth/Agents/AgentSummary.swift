@@ -16,6 +16,8 @@ struct AgentSummaryInput: Sendable, Equatable {
     var subagents: [String]
     /// The tool waiting for permission (main agent), or the subagent that asks.
     var pendingTool: AgentSession.Tool?
+    /// The agent's own description of the pending call, preferred for the permission line.
+    var pendingDescription: String?
     var askingSubagent: String?
     var stoppedEarly = false
 
@@ -39,6 +41,7 @@ struct AgentSummaryInput: Sendable, Equatable {
                   tools: session.recentTools, lastMessage: session.lastMessage, subagents: session.subagents.map(\.type))
         if session.phase == .permission {
             pendingTool = session.permissionTool.map { AgentSession.Tool(name: $0, summary: session.permissionHint) }
+            pendingDescription = session.permissionDescription
         } else {
             askingSubagent = session.subagents.first { $0.phase == .permission }?.type
         }
@@ -211,8 +214,11 @@ enum AgentSummaryLine {
         switch input.phase {
         case .permission:
             if let who = input.askingSubagent { return tidy("\(AgentSummaryInput.clean(who, limit: 40)) wants permission") }
+            if let description = input.pendingDescription {
+                return tidy("Wants to: " + AgentSummaryInput.clean(description, limit: 60))
+            }
             guard let tool = input.pendingTool else { return "Wants permission" }
-            let hint = tool.summary.map { AgentSummaryInput.clean($0, limit: 50) }
+            let hint = tool.summary.map { shortCommand(AgentSummaryInput.clean($0, limit: 120), tool: tool.name) }
             let verb: String? = switch tool.name {
             case "Bash", "shell", "exec_command", "local_shell": "run"
             case "Edit", "Write", "MultiEdit", "NotebookEdit", "apply_patch": "edit"
@@ -229,6 +235,43 @@ enum AgentSummaryLine {
         default:
             return nil
         }
+    }
+
+    /// A command shown as its first word, subcommand and target, not as a whole script: "git push … main",
+    /// "rm build", "npm test". Leading `cd …` and bare assignments are skipped, redirections and quoted
+    /// arguments dropped; anything that still isn't a plain command is shown cut as before. Non-shell hints
+    /// pass through.
+    static func shortCommand(_ hint: String, tool: String) -> String {
+        guard ["Bash", "shell", "exec_command", "local_shell"].contains(tool) else { return hint }
+        let asBefore = String(hint.prefix(50))
+        let segments = hint.split(whereSeparator: { ";&|\n".contains($0) })
+            .map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty }
+        let isSetup = { (segment: String) -> Bool in
+            let words = segment.split(separator: " ")
+            return words.first == "cd" || (words.count == 1 && segment.contains("="))
+        }
+        guard var segment = segments.first(where: { !isSetup($0) }) else { return asBefore }
+        segment = segment.replacing(/"[^"]*"|'[^']*'/, with: " ")           // quoted arguments
+        segment = segment.replacing(/\s\d*[<>]+&?\S*/, with: " ")         // redirections
+        guard segment.firstMatch(of: /[$()`<>"']/) == nil else { return asBefore }
+        var words = segment.split(separator: " ").map(String.init).filter { !$0.contains("=") }
+        // Flags that take the next word as their value (-m message, -C dir): drop both.
+        let takesValue: Set<String> = ["-m", "-C", "-c", "-o", "-e", "-F", "-b"]
+        var index = 0
+        while index < words.count {
+            if takesValue.contains(words[index]) {
+                words.removeSubrange(index..<min(index + 2, words.count))
+            } else if words[index].hasPrefix("-") {
+                words.remove(at: index)
+            } else {
+                index += 1
+            }
+        }
+        guard let command = words.first else { return asBefore }
+        var parts = [command]
+        if words.count > 1, words[1].allSatisfy({ $0.isLetter }) { parts.append(words[1]) }
+        if let target = words.dropFirst(parts.count).last { parts.append(parts.count < words.count - 1 ? "… \(target)" : target) }
+        return parts.joined(separator: " ")
     }
 
     /// Used when Apple Intelligence is unavailable or fails: the last tool and its hint.

@@ -22,9 +22,9 @@ struct MenuPanel: View {
             ActivityGraph(history: model.stats.rateHistory)
             savingsLine
             servedModels
-            agentsSection
             clients
             environment
+            agentsSection
             actions
         }
         .padding(14)
@@ -184,7 +184,8 @@ struct MenuPanel: View {
             TimelineView(.periodic(from: .now, by: 1)) { context in
                 AgentsSection(rows: model.agents.isEnabled ? model.agents.rows(at: context.date) : [],
                               now: context.date,
-                              nothingConnected: nothingConnected, canConnect: model.server.port != nil) { agent in
+                              nothingConnected: nothingConnected, unconnected: model.agents.unconnected,
+                              canConnect: model.server.port != nil) { agent in
                     AgentConnector(agents: model.agents, port: model.server.port).connect(agent)
                 }
             }

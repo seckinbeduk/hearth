@@ -67,6 +67,8 @@ struct AgentSession: Sendable, Equatable, Identifiable {
     var permissionTool: String?
     /// The pending tool's short hint ("git push"), for the permission line.
     var permissionHint: String?
+    /// The agent's own description of the pending call ("Create a test file on the Desktop"), if it sent one.
+    var permissionDescription: String?
     /// The last turn was cut short (Codex Interrupt, Claude Code StopFailure).
     var stoppedEarly = false
     /// The agent's own title for the session, if any; shown until the first summary.
@@ -74,9 +76,18 @@ struct AgentSession: Sendable, Equatable, Identifiable {
     /// Background work that doesn't hold the turn, e.g. a dev server: shown as "running: …" in the row.
     var backgroundNote: String?
 
+    /// Where the session started; the project it's named after.
+    var firstCwd: String?
+
     var agent: AgentKind { id.agent }
-    /// The project: the last path component of the working directory.
-    var project: String { cwd.map { ($0 as NSString).lastPathComponent } ?? "" }
+    /// The project: the last path component of the folder the session started in.
+    var project: String { (firstCwd ?? cwd).map { ($0 as NSString).lastPathComponent } ?? "" }
+    /// The folder it works in now, when that's another one ("coding → Hearth").
+    var currentProject: String? {
+        guard let cwd, let firstCwd, cwd != firstCwd else { return nil }
+        let name = (cwd as NSString).lastPathComponent
+        return name == project ? nil : name
+    }
 
     /// A subagent asking for permission counts for the whole session.
     var effectivePhase: AgentPhase {
@@ -104,7 +115,10 @@ struct AgentSessionStore: Sendable, Equatable {
         let key = AgentSession.Key(agent: event.agent, sessionID: event.sessionID)
         guard var session = sessions[key] ?? newSession(for: event, key: key) else { return }
         session.lastEventAt = max(session.lastEventAt, event.time)
-        if let cwd = event.cwd, event.subagentID == nil { session.cwd = cwd }
+        if let cwd = event.cwd, event.subagentID == nil {
+            session.cwd = cwd
+            if session.firstCwd == nil { session.firstCwd = cwd }
+        }
         if let title = event.title, event.subagentID == nil { session.title = title }
 
         if let subagentID = event.subagentID, event.kind != .subagentStarted, event.kind != .subagentStopped {
@@ -150,7 +164,7 @@ struct AgentSessionStore: Sendable, Equatable {
         // An end for a session we never saw has nothing to show.
         if event.kind == .sessionEnded { return nil }
         return AgentSession(id: key, cwd: event.cwd, phase: .idle, phaseSince: event.time,
-                            startedAt: event.time, lastEventAt: event.time)
+                            startedAt: event.time, lastEventAt: event.time, firstCwd: event.subagentID == nil ? event.cwd : nil)
     }
 
     private func applyMainEvent(_ event: AgentEvent, to session: inout AgentSession) {
@@ -188,6 +202,7 @@ struct AgentSessionStore: Sendable, Equatable {
         case .permissionRequested:
             session.permissionTool = event.toolName
             session.permissionHint = event.toolSummary
+            session.permissionDescription = event.toolDescription
             set(.permission, on: &session, at: event.time)
         case .notification(let type):
             if type == "permission_prompt", session.phase != .ended { set(.permission, on: &session, at: event.time) }
@@ -244,6 +259,7 @@ struct AgentSessionStore: Sendable, Equatable {
         if session.phase == .permission {
             session.permissionTool = nil
             session.permissionHint = nil
+            session.permissionDescription = nil
         }
         session.phase = phase
         session.phaseSince = time

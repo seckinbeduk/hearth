@@ -195,7 +195,7 @@ struct AgentSummarySchedulingTests {
         clock.advance(1)
         model.apply(event(.permissionRequested, at: clock.now, tool: "Bash", summary: "git log -1"))
         await settle(model)
-        #expect(model.summaries[key] == "Wants to run git log -1")     // code, not the model
+        #expect(model.summaries[key] == "Wants to run git log")     // code, not the model
         #expect(fake.calls.count == 1)
         clock.advance(1)
         model.apply(event(.toolStarted, at: clock.now, tool: "Bash", summary: "git log -1"))
@@ -254,11 +254,28 @@ struct AgentSummaryTextTests {
             input.stoppedEarly = stopped
             return AgentSummaryLine.deterministic(for: input, lastWorkingLine: last)
         }
-        #expect(line(.permission, pending: .init(name: "Bash", summary: "git push -u origin main")) == "Wants to run git push -u origin main")
+        #expect(line(.permission, pending: .init(name: "Bash", summary: "git push -u origin main")) == "Wants to run git push … main")
         #expect(line(.permission, pending: .init(name: "Edit", summary: "Package.swift")) == "Wants to edit Package.swift")
         #expect(line(.permission, pending: .init(name: "mcp__db__query", summary: nil)) == "Wants to use mcp__db__query")
-        #expect(line(.permission, pending: .init(name: "Bash", summary: "API_TOKEN=abc ./deploy.sh")) == "Wants to run API_TOKEN=… ./deploy.sh")
+        #expect(line(.permission, pending: .init(name: "Bash", summary: "API_TOKEN=abc ./deploy.sh")) == "Wants to run ./deploy.sh")
         #expect(line(.permission, asking: "reviewer") == "Reviewer wants permission")
+        var described = AgentSummaryInput(agent: .claudeCode, project: "p", phase: .permission, prompt: nil)
+        described.pendingTool = .init(name: "Bash", summary: "f=hearth-ui-test.txt; if [ -e $f ]; then rm $f; fi")
+        described.pendingDescription = "Create hearth-ui-test.txt on the Desktop"
+        #expect(AgentSummaryLine.deterministic(for: described, lastWorkingLine: nil) == "Wants to: Create hearth-ui-test.txt on the Desktop")
+        described.pendingDescription = nil
+        #expect(AgentSummaryLine.deterministic(for: described, lastWorkingLine: nil)
+            == "Wants to run f=hearth-ui-test.txt; if [ -e $f ]; then rm $f; fi")     // not a plain command: as before
+        #expect(AgentSummaryLine.shortCommand("cd Hearth && git push", tool: "Bash") == "git push")
+        #expect(AgentSummaryLine.shortCommand("npm test 2>&1 | tail -20", tool: "Bash") == "npm test")
+        #expect(AgentSummaryLine.shortCommand("git commit -m \"Fix bug\"", tool: "Bash") == "git commit")
+        #expect(AgentSummaryLine.shortCommand("git -C repo status", tool: "Bash") == "git status")
+        #expect(AgentSummaryLine.shortCommand("f=x; rm $f", tool: "Bash") == "f=x; rm $f")
+        #expect(AgentSummaryLine.shortCommand("(cd x && make)", tool: "Bash") == "(cd x && make)")
+        #expect(AgentSummaryLine.shortCommand("git push -u origin release/0.3", tool: "Bash") == "git push … release/0.3")
+        #expect(AgentSummaryLine.shortCommand("rm -rf build", tool: "Bash") == "rm build")
+        #expect(AgentSummaryLine.shortCommand("swift test", tool: "Bash") == "swift test")
+        #expect(AgentSummaryLine.shortCommand("Package.swift", tool: "Edit") == "Package.swift")
         #expect(line(.permission) == "Wants permission")
         #expect(line(.waitingOn("reviewer")) == "Waiting for reviewer")
         #expect(line(.yourTurn, stopped: true, last: "Renaming the module") == "Stopped: Renaming the module")

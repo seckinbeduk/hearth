@@ -66,6 +66,8 @@ struct AgentEvent: Sendable, Equatable {
     var toolUseID: String?
     /// A short, single-line hint of what the tool does (command, file name, …), for the summary line.
     var toolSummary: String?
+    /// The agent's own one-line description of the tool call, when it sends one (Claude Code's Bash does).
+    var toolDescription: String?
     var prompt: String?
     var lastMessage: String?
     /// The turn ended on an error (Claude Code's StopFailure) rather than normally.
@@ -98,6 +100,9 @@ enum AgentEventDecoder {
             toolName: nonEmpty(body["tool_name"]),
             toolUseID: nonEmpty(body["tool_use_id"]),
             toolSummary: toolInput.flatMap(summary(of:)),
+            // Only where `description` describes the call itself; for other tools (MCP) it can be content.
+            toolDescription: ["Bash", "Agent", "Task"].contains(nonEmpty(body["tool_name"]) ?? "")
+                ? nonEmpty(toolInput?["description"]) : nil,
             prompt: nonEmpty(body["prompt"]),
             lastMessage: nonEmpty(body["last_assistant_message"]),
             failed: name == "StopFailure", title: nonEmpty(body["session_title"]))

@@ -18,8 +18,12 @@ enum AgentsPreviewRender {
         }
         let reviewer = AgentSubagent(id: "a1", type: "reviewer", phase: .running, phaseSince: now.addingTimeInterval(-70),
                                      startedAt: now.addingTimeInterval(-70))
+        let askingReviewer = AgentSubagent(id: "a2", type: "reviewer", phase: .permission, phaseSince: now.addingTimeInterval(-6),
+                                           startedAt: now.addingTimeInterval(-40))
         let rows = [
-            row("uploader", .claudeCode, .phase(.permission), ago: 4, "Wants to run git push -u origin release/0.3"),
+            row("uploader", .claudeCode, .phase(.permission), ago: 4, "Wants to: Push the release branch to origin"),
+            row("coding → Hearth", .claudeCode, .phase(.running), ago: 40, "Reviewer wants permission",
+                children: [askingReviewer]),
             row("uploader #2", .claudeCode, .phase(.waitingOn("reviewer")), ago: 72, "Waiting for reviewer",
                 children: [reviewer]),
             row("billing", .codex, .phase(.running), ago: 134, "Running test command to diagnose CI build failure"),
@@ -27,9 +31,12 @@ enum AgentsPreviewRender {
             row("docs", .claudeCode, .phase(.yourTurn), ago: 610, "Done: Dev server running at localhost:5173",
                 note: "npm run dev"),
             row("notes", .codex, .stale, ago: 2_520, "Editing README.md to update the install section"),
+            row("scripts", .claudeCode, .phase(.ended), ago: 300, "Session ended"),
         ]
         let cases: [(String, AnyView)] = [
-            ("sessions", AnyView(AgentsSection(rows: rows, now: now, nothingConnected: false))),
+            ("sessions", AnyView(AgentsSection(rows: Array(rows.prefix(6)), now: now, nothingConnected: false))),
+            ("one-connected", AnyView(AgentsSection(rows: Array(rows.suffix(2)), now: now, nothingConnected: false,
+                                                     unconnected: [.codex]))),
             ("empty", AnyView(AgentsSection(rows: [], now: now, nothingConnected: false))),
             ("connect", AnyView(AgentsSection(rows: [], now: now, nothingConnected: true))),
         ]

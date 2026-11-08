@@ -50,4 +50,77 @@ struct AgentRowsTests {
         // Nothing known yet: no call to action.
         #expect(!model().nothingConnected)
     }
+
+    @Test func projectIsWhereTheSessionStarted() {
+        let model = model()
+        let t0 = Date.now.addingTimeInterval(-30)
+        model.apply(event(.promptSubmitted, "s", cwd: "/Users/user/coding", at: t0))
+        model.apply(event(.toolStarted, "s", cwd: "/Users/user/coding/Hearth", at: t0.addingTimeInterval(1)))
+        #expect(model.rows(at: .now).first?.name == "coding → Hearth")
+    }
+
+    @Test func childAsksParentDoesntShowAPill() {
+        let model = model()
+        let t0 = Date.now.addingTimeInterval(-30)
+        model.apply(event(.promptSubmitted, "s", cwd: "/p/app", at: t0))
+        var start = event(.subagentStarted, "s", cwd: nil, at: t0)
+        start.subagentID = "a1"; start.subagentType = "reviewer"
+        model.apply(start)
+        var ask = event(.permissionRequested, "s", cwd: nil, at: t0)
+        ask.subagentID = "a1"; ask.subagentType = "reviewer"
+        model.apply(ask)
+        let row = model.rows(at: .now).first
+        #expect(row?.state == .phase(.running))
+        #expect(row?.children.first?.phase == .permission)
+        #expect(model.summaries[row!.id] == "Reviewer wants permission")
+        #expect(model.needsUser)                         // the badge still counts it
+    }
+
+    @Test func endedRowDropsThePermissionLine() {
+        let model = model()
+        let t0 = Date.now.addingTimeInterval(-30)
+        model.apply(event(.promptSubmitted, "s", cwd: "/p/app", at: t0))
+        var ask = event(.permissionRequested, "s", cwd: nil, at: t0)
+        ask.toolName = "Bash"; ask.toolSummary = "git push"
+        model.apply(ask)
+        #expect(model.rows(at: .now).first?.line == "Wants to run git push")
+        model.apply(event(.sessionEnded, "s", cwd: nil, at: t0.addingTimeInterval(1)))
+        #expect(model.rows(at: .now).first?.line == "Session ended")
+    }
+
+    /// The recorded Codex CLI session through the model the panel reads: a finished turn stays as
+    /// "your turn" (it isn't ended or hidden); only SessionEnd ends it.
+    @Test func codexSessionStaysVisibleAfterItsTurn() throws {
+        let url = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
+            .appendingPathComponent("Fixtures/Agents/codex-cli-session.jsonl")
+        let lines = try String(contentsOf: url, encoding: .utf8).split(separator: "\n")
+        let model = model()
+        let start = Date.now.addingTimeInterval(-200)
+        var rowsAfter: [Int: AgentRow?] = [:]
+        for (index, line) in lines.enumerated() {
+            let object = try #require(try JSONSerialization.jsonObject(with: Data(line.utf8)) as? [String: Any])
+            let body = try JSONSerialization.data(withJSONObject: try #require(object["body"]))
+            let time = start.addingTimeInterval(Double(try #require(object["t_ms"] as? Int)) / 1000)
+            if let event = AgentEventDecoder.decode(body, agent: .codex, receivedAt: time) { model.apply(event) }
+            rowsAfter[index + 1] = model.rows(at: time.addingTimeInterval(1)).first
+        }
+        #expect(rowsAfter[5]??.state == .phase(.yourTurn))          // first Stop
+        #expect(rowsAfter[10]??.state == .phase(.yourTurn))         // Interrupt
+        #expect(rowsAfter[20]??.state == .phase(.yourTurn))         // last Stop, before /quit
+        #expect(rowsAfter[20]??.agent == .codex)
+        #expect(rowsAfter[21]??.state == .phase(.ended))            // SessionEnd
+    }
+
+    @Test func oneConnectedAgentDoesntHideTheOther() throws {
+        let home = FileManager.default.temporaryDirectory.appendingPathComponent("hearth-home-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: home) }
+        let settings = AgentSettings(defaults: nil)
+        let model = AgentsModel(settings: settings, home: home, summarizer: Silent())
+        #expect(model.unconnected.isEmpty)                         // unknown until read
+        model.refreshHookStatus(port: 8800)
+        #expect(model.nothingConnected)
+        try model.connect(.claudeCode, port: 8800)
+        #expect(!model.nothingConnected)
+        #expect(model.unconnected == [.codex])
+    }
 }

@@ -439,6 +439,13 @@ struct AgentEventDecoderTests {
         #expect(decode(#"{"session_id":"s","hook_event_name":"PostToolUseFailure","tool_use_id":"u"}"#)?.kind == .toolFinished)
     }
 
+    @Test func descriptionOnlyFromToolsWhereItDescribesTheCall() {
+        let bash = decode(#"{"session_id":"s","hook_event_name":"PermissionRequest","tool_name":"Bash","tool_input":{"command":"git push","description":"Push to origin"}}"#)
+        #expect(bash?.toolDescription == "Push to origin")
+        let mcp = decode(#"{"session_id":"s","hook_event_name":"PermissionRequest","tool_name":"mcp__x__create_issue","tool_input":{"description":"The login page crashes"}}"#)
+        #expect(mcp?.toolDescription == nil)
+    }
+
     @Test func stopFailureEndsTheTurn() {
         #expect(decode(#"{"session_id":"s","hook_event_name":"StopFailure","error":"rate_limit"}"#)?.kind
             == .turnEnded(backgroundTasks: []))

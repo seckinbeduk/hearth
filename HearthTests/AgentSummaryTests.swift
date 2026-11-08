@@ -137,6 +137,34 @@ struct AgentSummarySchedulingTests {
         #expect(fake.calls.count == 1)
     }
 
+    @Test func permissionLineIsInstantEvenWhileBusy() async {
+        let hanging = HangingSummarizer(), clock = Clock()
+        let settings = AgentSettings(defaults: nil)
+        settings.isEnabled = true
+        let model = AgentsModel(settings: settings, summarizer: hanging, now: { clock.now })
+        model.apply(event(.promptSubmitted, at: clock.now, prompt: "Push it"))   // the model call hangs
+        #expect(model.summaryWork != nil)
+        clock.advance(1)
+        model.apply(event(.permissionRequested, at: clock.now, tool: "Bash", summary: "git push"))
+        #expect(model.summaries[key] == "Wants to run git push")
+        model.yieldToInference()
+        await model.summaryWork?.value
+        #expect(model.summaries[key] == "Wants to run git push")
+    }
+
+    @Test func stoppedTurnRepeatsTheLastWorkingLine() async {
+        let fake = FakeSummarizer(), clock = Clock()
+        let model = makeModel(fake, clock)
+        model.apply(event(.promptSubmitted, at: clock.now, prompt: "Rename the module"))
+        await settle(model)
+        #expect(model.summaries[key] == "Running the uploader tests")
+        clock.advance(1)
+        model.apply(event(.interrupted, at: clock.now))
+        await settle(model)
+        #expect(model.summaries[key] == "Stopped: Running the uploader tests")
+        #expect(fake.calls.count == 1)
+    }
+
     @Test func stepsAsideForHearthsOwnRequests() async {
         let hanging = HangingSummarizer(), clock = Clock()
         let settings = AgentSettings(defaults: nil)
@@ -167,7 +195,8 @@ struct AgentSummarySchedulingTests {
         clock.advance(1)
         model.apply(event(.permissionRequested, at: clock.now, tool: "Bash", summary: "git log -1"))
         await settle(model)
-        #expect(model.summaries[key] == nil)            // a permission request isn't a tool call
+        #expect(model.summaries[key] == "Wants to run git log -1")     // code, not the model
+        #expect(fake.calls.count == 1)
         clock.advance(1)
         model.apply(event(.toolStarted, at: clock.now, tool: "Bash", summary: "git log -1"))
         model.apply(event(.turnEnded(backgroundTasks: []), at: clock.now))
@@ -214,6 +243,74 @@ struct AgentSummaryTextTests {
         #expect(!text.contains("/Users/user"))
         #expect(text.contains("cat README.md"))
         #expect(text.count <= AgentSummaryInput.maxCharacters)
+    }
+
+    @Test func deterministicLines() {
+        func line(_ phase: AgentPhase, pending: AgentSession.Tool? = nil, asking: String? = nil, stopped: Bool = false,
+                  last: String? = nil, tools: [AgentSession.Tool] = []) -> String? {
+            var input = AgentSummaryInput(agent: .claudeCode, project: "p", phase: phase, prompt: nil, tools: tools)
+            input.pendingTool = pending
+            input.askingSubagent = asking
+            input.stoppedEarly = stopped
+            return AgentSummaryLine.deterministic(for: input, lastWorkingLine: last)
+        }
+        #expect(line(.permission, pending: .init(name: "Bash", summary: "git push -u origin main")) == "Wants to run git push -u origin main")
+        #expect(line(.permission, pending: .init(name: "Edit", summary: "Package.swift")) == "Wants to edit Package.swift")
+        #expect(line(.permission, pending: .init(name: "mcp__db__query", summary: nil)) == "Wants to use mcp__db__query")
+        #expect(line(.permission, pending: .init(name: "Bash", summary: "API_TOKEN=abc ./deploy.sh")) == "Wants to run API_TOKEN=… ./deploy.sh")
+        #expect(line(.permission, asking: "reviewer") == "Reviewer wants permission")
+        #expect(line(.permission) == "Wants permission")
+        #expect(line(.waitingOn("reviewer")) == "Waiting for reviewer")
+        #expect(line(.yourTurn, stopped: true, last: "Renaming the module") == "Stopped: Renaming the module")
+        #expect(line(.yourTurn, stopped: true, tools: [.init(name: "Bash", summary: "grep -rl Old Sources")])
+            == "Stopped: Running grep -rl Old Sources")
+        #expect(line(.yourTurn) == nil)          // the model writes these
+        #expect(line(.running) == nil)
+    }
+
+    @Test func yourTurnStartIsChosenByCode() {
+        func input(_ message: String?) -> AgentSummaryInput {
+            AgentSummaryInput(agent: .claudeCode, project: "p", phase: .yourTurn, prompt: nil, lastMessage: message)
+        }
+        let asks = input("All 14 tests pass. Should I commit it?")
+        #expect(asks.turnPrefix == "Asks whether")
+        #expect(AgentSummaryLine.line(fromModel: "To commit the retry fix?", for: asks) == "Asks whether to commit the retry fix")
+        #expect(AgentSummaryLine.line(fromModel: "Asks whether to commit", for: asks) == "Asks whether to commit")
+        #expect(AgentSummaryLine.line(fromModel: "Should I commit the retry?", for: asks) == "Asks whether to commit the retry")
+        let done = input("The dev server is running at localhost:5173.")
+        #expect(done.turnPrefix == "Done:")
+        #expect(AgentSummaryLine.line(fromModel: "dev server running on port 5173", for: done) == "Done: Dev server running on port 5173")
+        #expect(AgentSummaryLine.line(fromModel: "Done: started the server", for: done) == "Done: started the server")
+        // A question followed by options still asks; an open question gets "Asks"; a URL's "?" isn't a question.
+        #expect(input("Which approach do you prefer?\n\n1. Keep the cache\n2. Drop it").turnPrefix == "Asks")
+        #expect(input("Do you want the short version?\n- yes\n- no").turnPrefix == "Asks whether")
+        #expect(input("Opened the PR: https://example.com/pull/12?w=1").turnPrefix == "Done:")
+        #expect(AgentSummaryLine.line(fromModel: "Which approach to use", for: input("Which one?")) == "Asks which approach to use")
+        var stopped = input("Should I go on?")
+        stopped.stoppedEarly = true
+        #expect(stopped.turnPrefix == nil)
+        let working = AgentSummaryInput(agent: .claudeCode, project: "p", phase: .running, prompt: nil)
+        #expect(AgentSummaryLine.line(fromModel: "Editing Backoff.swift.", for: working) == "Editing Backoff.swift")
+        let searching = AgentSummaryInput(agent: .claudeCode, project: "p", phase: .running, prompt: nil,
+                                          tools: [.init(name: "Grep", summary: "LegacyLogger")])
+        #expect(AgentSummaryLine.line(fromModel: "Find every place we use the old logger", for: searching) == "Searching LegacyLogger")
+        #expect(AgentSummaryLine.line(fromModel: "Running: swift test", for: searching) == "Running: swift test")
+        let pattern = AgentSummaryInput(agent: .claudeCode, project: "p", phase: .running, prompt: nil,
+                                        tools: [.init(name: "Grep", summary: "LegacyLogger\\.")])
+        #expect(AgentSummaryLine.fallback(for: pattern) == "Searching LegacyLogger")
+    }
+
+    @Test func stopFailureAndInterruptMarkTheTurnStopped() {
+        var store = AgentSessionStore()
+        var stop = AgentEvent(agent: .claudeCode, sessionID: "s", kind: .turnEnded(backgroundTasks: []), time: .now)
+        store.apply(AgentEvent(agent: .claudeCode, sessionID: "s", kind: .promptSubmitted, time: .now))
+        stop.failed = true
+        store.apply(stop)
+        #expect(store.sessions.values.first?.stoppedEarly == true)
+        store.apply(AgentEvent(agent: .claudeCode, sessionID: "s", kind: .promptSubmitted, time: .now))
+        #expect(store.sessions.values.first?.stoppedEarly == false)
+        #expect(AgentEventDecoder.decode(Data(#"{"session_id":"s","hook_event_name":"StopFailure"}"#.utf8),
+                                         agent: .claudeCode, receivedAt: .now)?.failed == true)
     }
 
     @Test func masksObviousSecrets() {

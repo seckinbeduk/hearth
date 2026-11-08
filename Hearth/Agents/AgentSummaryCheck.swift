@@ -12,10 +12,16 @@ enum AgentSummaryCheck {
         let summarizer = AppleAgentSummarizer()
         print("Apple Intelligence available: \(AppleIntelligenceBackend.isAvailable)\n")
         for (name, events) in handMade() {
-            var store = AgentSessionStore()
+            var store = AgentSessionStore(), before = AgentSessionStore()
             events.forEach { store.apply($0) }
+            events.dropLast().forEach { before.apply($0) }
             guard let session = store.sessions.values.first else { continue }
-            await report(name, AgentSummaryInput(session: session), summarizer)
+            // "Stopped: …" repeats the line written while the session was still working.
+            var working: String?
+            if session.stoppedEarly, let earlier = before.sessions.values.first {
+                working = (try? await summarizer.summarize(AgentSummaryInput(session: earlier))).flatMap(AgentSummaryLine.tidy)
+            }
+            await report(name, AgentSummaryInput(session: session), summarizer, lastWorkingLine: working)
         }
         guard let fixtures else { return }
         for file in (try? FileManager.default.contentsOfDirectory(at: fixtures, includingPropertiesForKeys: nil)) ?? []
@@ -42,15 +48,18 @@ enum AgentSummaryCheck {
     }
 
     @MainActor
-    private static func report(_ name: String, _ input: AgentSummaryInput, _ summarizer: AppleAgentSummarizer) async {
+    private static func report(_ name: String, _ input: AgentSummaryInput, _ summarizer: AppleAgentSummarizer,
+                               lastWorkingLine: String? = nil) async {
         let started = ContinuousClock.now
         let line: String
-        do {
+        if let exact = AgentSummaryLine.deterministic(for: input, lastWorkingLine: lastWorkingLine) {
+            line = exact + "   [code]"
+        } else { do {
             let raw = try await summarizer.summarize(input)
-            line = (AgentSummaryLine.tidy(raw) ?? "(empty)") + (raw.count > AgentSummaryLine.maxLength ? "   [raw \(raw.count) chars]" : "")
+            line = (AgentSummaryLine.line(fromModel: raw, for: input) ?? "(empty)") + (raw.count > AgentSummaryLine.maxLength ? "   [raw \(raw.count) chars]" : "")
         } catch {
             line = "FAILED (\(error)) → fallback: \(AgentSummaryLine.fallback(for: input) ?? "none")"
-        }
+        } }
         let ms = (ContinuousClock.now - started).components.attoseconds / 1_000_000_000_000_000
             + (ContinuousClock.now - started).components.seconds * 1000
         print("[\(name)] \(AgentSummaryInput.describe(input.phase)), \(ms) ms\n  → \(line)\n")

@@ -21,6 +21,8 @@ final class AgentsModel {
     /// True while Hearth serves an inference request: summaries wait, they never slow Hearth's own work.
     @ObservationIgnored var isServing: @MainActor () -> Bool = { false }
     @ObservationIgnored private var summarized: [AgentSession.Key: (phase: AgentPhase, at: Date)] = [:]
+    /// The latest line written while each session was working, for "Stopped: …".
+    @ObservationIgnored private var workingLines: [AgentSession.Key: String] = [:]
     /// The summary being written, if any; one at a time.
     @ObservationIgnored private(set) var summaryWork: Task<Void, Never>?
 
@@ -54,6 +56,7 @@ final class AgentsModel {
             eventCount = 0
             summaries = [:]
             summarized = [:]
+            workingLines = [:]
         }
     }
 
@@ -61,6 +64,9 @@ final class AgentsModel {
         guard settings.isEnabled else { return }
         store.apply(event)
         eventCount += 1
+        if event.kind == .promptSubmitted, event.subagentID == nil {
+            workingLines[AgentSession.Key(agent: event.agent, sessionID: event.sessionID)] = nil
+        }
         summarizeNext()
     }
 
@@ -74,6 +80,7 @@ final class AgentsModel {
                 let keys = Set(self.store.sessions.keys)
                 self.summaries = self.summaries.filter { keys.contains($0.key) }
                 self.summarized = self.summarized.filter { keys.contains($0.key) }
+                self.workingLines = self.workingLines.filter { keys.contains($0.key) }
             }
         }
         // Retries summaries skipped or cancelled while Hearth was serving a request.
@@ -90,11 +97,20 @@ final class AgentsModel {
 
     /// Starts the next due summary, if nothing else is being written and Hearth isn't serving a request.
     func summarizeNext() {
-        guard summaryWork == nil, isEnabled, !isServing() else { return }
+        guard isEnabled else { return }
         let time = now()
+        // Lines code knows exactly come first and at once, even while the model or Hearth is busy.
+        for session in store.visibleSessions(at: time) where isDue(session, at: time) {
+            let input = AgentSummaryInput(session: session)
+            guard let line = AgentSummaryLine.deterministic(for: input, lastWorkingLine: workingLines[session.id])
+            else { continue }
+            summarized[session.id] = (session.effectivePhase, time)
+            summaries[session.id] = line
+        }
+        guard summaryWork == nil, !isServing() else { return }
         let due = store.visibleSessions(at: time).first { isDue($0, at: time) }
         guard let session = due else { return }
-        let key = session.id, phase = session.phase
+        let key = session.id, phase = session.effectivePhase
         let input = AgentSummaryInput(session: session)
         let previous = summarized[key]
         summarized[key] = (phase, time)
@@ -106,13 +122,16 @@ final class AgentsModel {
                 self.summaryWork = nil
                 // Stepped aside for one of Hearth's own requests: due again, the ticker retries later.
                 if Task.isCancelled {
-                    self.summarized[key] = previous
+                    // Only undo our own mark; a newer one (e.g. a permission line) stays.
+                    if self.summarized[key]?.phase == phase, self.summarized[key]?.at == time { self.summarized[key] = previous }
                     return
                 }
                 // Dropped meanwhile (Agents turned off, session swept): don't bring it back.
                 if self.isEnabled, self.store.sessions[key] != nil, self.summarized[key]?.phase == phase {
-                    self.summaries[key] = raw.flatMap(AgentSummaryLine.tidy) ?? AgentSummaryLine.fallback(for: input)
+                    self.summaries[key] = raw.flatMap { AgentSummaryLine.line(fromModel: $0, for: input) }
+                        ?? AgentSummaryLine.fallback(for: input)
                         ?? self.summaries[key]
+                    if phase == .running, let line = self.summaries[key] { self.workingLines[key] = line }
                 }
                 self.summarizeNext()
             }
@@ -129,7 +148,7 @@ final class AgentsModel {
     private func isDue(_ session: AgentSession, at time: Date) -> Bool {
         guard session.phase != .ended, store.displayState(of: session, at: time) != .stale else { return false }
         guard let last = summarized[session.id] else { return session.phase != .idle || session.lastPrompt != nil }
-        if last.phase != session.phase { return true }
+        if last.phase != session.effectivePhase { return true }
         return session.phase == .running && time.timeIntervalSince(last.at) >= Self.summaryInterval
             && session.lastEventAt > last.at
     }

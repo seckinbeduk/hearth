@@ -14,6 +14,10 @@ struct AgentSummaryInput: Sendable, Equatable {
     var tools: [AgentSession.Tool]
     var lastMessage: String?
     var subagents: [String]
+    /// The tool waiting for permission (main agent), or the subagent that asks.
+    var pendingTool: AgentSession.Tool?
+    var askingSubagent: String?
+    var stoppedEarly = false
 
     static let maxCharacters = 3_000
 
@@ -30,9 +34,15 @@ struct AgentSummaryInput: Sendable, Equatable {
     }
 
     init(session: AgentSession) {
-        self.init(agent: session.agent, project: session.project, phase: session.phase, prompt: session.lastPrompt,
-                  promptIsAutomatic: session.lastPrompt.map(Self.isAutomatic) ?? false, tools: session.recentTools,
-                  lastMessage: session.lastMessage, subagents: session.subagents.map(\.type))
+        self.init(agent: session.agent, project: session.project, phase: session.effectivePhase,
+                  prompt: session.lastPrompt, promptIsAutomatic: session.lastPrompt.map(Self.isAutomatic) ?? false,
+                  tools: session.recentTools, lastMessage: session.lastMessage, subagents: session.subagents.map(\.type))
+        if session.phase == .permission {
+            pendingTool = session.permissionTool.map { AgentSession.Tool(name: $0, summary: session.permissionHint) }
+        } else {
+            askingSubagent = session.subagents.first { $0.phase == .permission }?.type
+        }
+        stoppedEarly = session.stoppedEarly
     }
 
     /// Tags Claude Code wraps its own turns in (a subagent's result, a task notification, another session).
@@ -48,7 +58,7 @@ struct AgentSummaryInput: Sendable, Equatable {
     /// The prompt for the model, trimmed hard. Paths are cut to file names; nothing else is added.
     var promptText: String {
         var parts: [String] = ["Agent: \(agent.displayName)", "Project: \(project.isEmpty ? "unknown" : project)",
-                               "State: \(Self.describe(phase))", "Write: \(Self.task(for: phase))"]
+                               "State: \(Self.describe(phase))", "Write: \(task)"]
         if !subagents.isEmpty { parts.append("Subagents running: " + subagents.joined(separator: ", ")) }
         if let prompt {
             let label = promptIsAutomatic
@@ -94,14 +104,41 @@ struct AgentSummaryInput: Sendable, Equatable {
             .replacing(/:\/\/([^\/\s:@]+):[^\/\s@]+@/) { "://\($0.output.1):…@" }
     }
 
-    /// What the line should say in each state.
-    static func task(for phase: AgentPhase) -> String {
-        switch phase {
-        case .idle, .running: "what the agent is working on right now"
-        case .permission: "what the agent wants permission to do"
-        case .yourTurn: "what the agent just finished, or what it asks the user, judging by its last message"
-        case .waitingOn(let task): "that the agent waits for \(task), and on what work"
-        case .ended: "that the session ended"
+    /// For "your turn", code picks the start from the last message (a question → "Asks whether", else "Done:")
+    /// and the model only writes the rest: a small model doesn't keep a prefix reliably.
+    var turnPrefix: String? {
+        guard phase == .yourTurn, !stoppedEarly else { return nil }
+        guard let question = Self.closingQuestion(lastMessage ?? "") else { return "Done:" }
+        let first = question.split(separator: " ").first.map { $0.lowercased() } ?? ""
+        return ["which", "what", "how", "where", "when", "who", "why"].contains(first) ? "Asks" : "Asks whether"
+    }
+
+    /// The question the message ends with, if any. A trailing list of options doesn't count as the end
+    /// ("Which do you prefer?\n1. …\n2. …"), and a "?" inside a URL isn't a question mark.
+    static func closingQuestion(_ message: String) -> String? {
+        let lines = message.split(whereSeparator: \.isNewline).map { $0.trimmingCharacters(in: .whitespaces) }
+            .filter { !$0.isEmpty }
+        let isOption = { (line: String) in line.wholeMatch(of: /(?:[-*•]|\d+[.)])\s+.*/) != nil }
+        guard let last = lines.last(where: { !isOption($0) }) else { return nil }
+        let sentences = last.split(whereSeparator: { ".!".contains($0) }).map { $0.trimmingCharacters(in: .whitespaces) }
+        guard let sentence = sentences.last(where: { !$0.isEmpty }),
+              sentence.firstMatch(of: /\?(?:[\s*)"']|$)/) != nil else { return nil }
+        return sentence
+    }
+
+    /// What the model should write (only for the states it writes).
+    var task: String {
+        switch turnPrefix {
+        case "Asks whether":
+            "only the rest of the sentence \"The agent asks whether …\": what it asks the user, a few words"
+        case "Asks":
+            "only the rest of the sentence \"The agent asks …\", starting with which, what, how, where, when, "
+                + "who or why: what it asks the user, a few words"
+        case "Done:":
+            "only what the agent finished or found, as a short phrase, judging by its last message"
+        default:
+            "what the agent is doing right now, starting with a verb in -ing form (Editing, Running, Reading, "
+                + "Writing, Searching, Planning, Fixing). Describe the work; don't repeat the user's request"
         }
     }
 
@@ -138,14 +175,74 @@ enum AgentSummaryLine {
         return word.trimmingCharacters(in: .whitespaces.union(.punctuationCharacters)) + "…"
     }
 
+    /// The model's text made into the line: tidied, with the "your turn" start added by code.
+    static func line(fromModel raw: String, for input: AgentSummaryInput) -> String? {
+        guard var text = tidy(raw) else { return nil }
+        guard let prefix = input.turnPrefix else {
+            // A working line describes the work in -ing form; one that echoes the request falls back to the tool.
+            let first = text.split(separator: " ").first
+                .map { $0.lowercased().trimmingCharacters(in: .punctuationCharacters) } ?? ""
+            if input.phase == .running, !first.hasSuffix("ing"), let fallback = fallback(for: input) { return fallback }
+            return text
+        }
+        for start in ["The agent asks whether", "The agent asks", "Asks whether", "Asks", "Done:", "Done", "Reports"]
+        where text.lowercased().hasPrefix(start.lowercased()) {
+            text = String(text.dropFirst(start.count)).trimmingCharacters(in: .whitespaces.union(.punctuationCharacters))
+            break
+        }
+        if prefix == "Asks whether" {
+            // The model often quotes the question itself: "Should I commit…" → "to commit…".
+            for (question, rest) in [("should i ", "to "), ("shall i ", "to "), ("do you want me to ", "to "),
+                                     ("would you like me to ", "to "), ("can i ", "it can "), ("may i ", "it may ")]
+            where text.lowercased().hasPrefix(question) {
+                text = rest + text.dropFirst(question.count)
+                break
+            }
+        }
+        guard let first = text.first else { return nil }
+        if prefix.hasPrefix("Asks") { text = first.lowercased() + text.dropFirst() }
+        if text.hasSuffix("?") { text.removeLast() }
+        return tidy("\(prefix) \(text)")
+    }
+
+    /// Lines code can write exactly, without the model: permission (what the agent wants to do), a stopped turn,
+    /// waiting on a subagent. `lastWorkingLine` is the session's latest summary while it was working.
+    static func deterministic(for input: AgentSummaryInput, lastWorkingLine: String?) -> String? {
+        switch input.phase {
+        case .permission:
+            if let who = input.askingSubagent { return tidy("\(AgentSummaryInput.clean(who, limit: 40)) wants permission") }
+            guard let tool = input.pendingTool else { return "Wants permission" }
+            let hint = tool.summary.map { AgentSummaryInput.clean($0, limit: 50) }
+            let verb: String? = switch tool.name {
+            case "Bash", "shell", "exec_command", "local_shell": "run"
+            case "Edit", "Write", "MultiEdit", "NotebookEdit", "apply_patch": "edit"
+            case "WebFetch": "fetch"
+            default: nil
+            }
+            if let verb, let hint { return tidy("Wants to \(verb) \(hint)") }
+            return tidy("Wants to use \(tool.name)")
+        case .yourTurn where input.stoppedEarly:
+            let last = lastWorkingLine ?? fallback(for: input)
+            return tidy("Stopped" + (last.map { ": \($0)" } ?? ""))
+        case .waitingOn(let task):
+            return tidy("Waiting for \(AgentSummaryInput.clean(task, limit: 50))")
+        default:
+            return nil
+        }
+    }
+
     /// Used when Apple Intelligence is unavailable or fails: the last tool and its hint.
     static func fallback(for input: AgentSummaryInput) -> String? {
         guard let tool = input.tools.last else { return nil }
-        let hint = tool.summary.map { AgentSummaryInput.clean($0, limit: 50) }
+        var hint = tool.summary.map { AgentSummaryInput.clean($0, limit: 50) }
+        if ["Grep", "Glob"].contains(tool.name) {
+            hint = hint.map { $0.replacingOccurrences(of: "\\", with: "").trimmingCharacters(in: .punctuationCharacters) }
+        }
         let verb: String
         switch tool.name {
         case "Bash", "shell", "exec_command", "local_shell": verb = "Running"
-        case "Read", "Grep", "Glob", "LS": verb = "Reading"
+        case "Read", "LS": verb = "Reading"
+        case "Grep", "Glob": verb = "Searching"
         case "Edit", "Write", "MultiEdit", "NotebookEdit", "apply_patch": verb = "Editing"
         case "Agent", "Task": verb = "Starting"
         case "WebFetch", "WebSearch": verb = "Looking up"
@@ -161,10 +258,10 @@ struct AppleAgentSummarizer: AgentSummarizer {
 
     // No example sentences here: a small model copies them when the input is thin (nib's lesson).
     static let instructions = """
-        You watch a coding agent working on a software project. Write one line that says what the agent \
-        is doing at this moment, using only facts from the input. English, present tense, start with a verb, \
-        at most 70 characters. No quotes, no file contents, no secrets, no long commands. \
-        If the input is too vague to say more, name the kind of step (a shell command, a file edit, a search). \
+        You watch a coding agent working on a software project. Write one line about it, using only facts \
+        from the input, in the form the "Write" line asks for. English, at most 70 characters. \
+        No quotes, no file contents, no secrets, no long commands. If the input is too vague to say more, \
+        name the kind of step (a shell command, a file edit, a search). \
         A latest message marked automatic came from the agent itself, not from the user.
         """
 
@@ -186,7 +283,7 @@ struct AppleAgentSummarizer: AgentSummarizer {
 @available(macOS 26.0, *)
 @Generable
 struct AgentActivityLine {
-    @Guide(description: "One line, present tense, starts with a verb, at most 70 characters")
+    @Guide(description: "One line in the form the prompt asks for, at most 70 characters")
     var line: String
 }
 #endif

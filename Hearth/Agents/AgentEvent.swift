@@ -68,6 +68,8 @@ struct AgentEvent: Sendable, Equatable {
     var toolSummary: String?
     var prompt: String?
     var lastMessage: String?
+    /// The turn ended on an error (Claude Code's StopFailure) rather than normally.
+    var failed = false
 }
 
 /// Turns hook payloads into `AgentEvent`s. Both agents use the same field names, so one decoder serves both.
@@ -95,7 +97,8 @@ enum AgentEventDecoder {
             toolUseID: nonEmpty(body["tool_use_id"]),
             toolSummary: toolInput.flatMap(summary(of:)),
             prompt: nonEmpty(body["prompt"]),
-            lastMessage: nonEmpty(body["last_assistant_message"]))
+            lastMessage: nonEmpty(body["last_assistant_message"]),
+            failed: name == "StopFailure")
     }
 
     private static func kind(for name: String, body: [String: Any]) -> AgentEvent.Kind? {

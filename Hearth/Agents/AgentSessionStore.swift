@@ -65,6 +65,10 @@ struct AgentSession: Sendable, Equatable, Identifiable {
     var lastMessage: String?
     /// The tool of the latest permission request (main agent).
     var permissionTool: String?
+    /// The pending tool's short hint ("git push"), for the permission line.
+    var permissionHint: String?
+    /// The last turn was cut short (Codex Interrupt, Claude Code StopFailure).
+    var stoppedEarly = false
     /// Background work that doesn't hold the turn, e.g. a dev server: shown as "running: …" in the row.
     var backgroundNote: String?
 
@@ -150,6 +154,7 @@ struct AgentSessionStore: Sendable, Equatable {
             set(.ended, on: &session, at: event.time)
         case .promptSubmitted:
             session.lastPrompt = event.prompt
+            session.stoppedEarly = false
             session.backgroundNote = nil
             set(.running, on: &session, at: event.time)
         case .toolStarted:
@@ -170,11 +175,13 @@ struct AgentSessionStore: Sendable, Equatable {
             if wasOpen || session.phase == .permission { set(.running, on: &session, at: event.time) }
         case .permissionRequested:
             session.permissionTool = event.toolName
+            session.permissionHint = event.toolSummary
             set(.permission, on: &session, at: event.time)
         case .notification(let type):
             if type == "permission_prompt", session.phase != .ended { set(.permission, on: &session, at: event.time) }
         case .turnEnded(let tasks):
             session.openTools = [:]
+            session.stoppedEarly = event.failed
             if let message = event.lastMessage { session.lastMessage = message }
             let running = tasks.filter(\.isRunning)
             session.backgroundNote = running.first { !$0.holdsTurn }.map(\.label)
@@ -185,6 +192,7 @@ struct AgentSessionStore: Sendable, Equatable {
             }
         case .interrupted:
             session.openTools = [:]
+            session.stoppedEarly = true
             set(.yourTurn, on: &session, at: event.time)
         case .subagentStarted:
             guard session.agent.hasSubagents, let id = event.subagentID, let type = event.subagentType else { return }
@@ -221,7 +229,10 @@ struct AgentSessionStore: Sendable, Equatable {
 
     private func set(_ phase: AgentPhase, on session: inout AgentSession, at time: Date) {
         guard session.phase != phase else { return }
-        if session.phase == .permission { session.permissionTool = nil }
+        if session.phase == .permission {
+            session.permissionTool = nil
+            session.permissionHint = nil
+        }
         session.phase = phase
         session.phaseSince = time
     }

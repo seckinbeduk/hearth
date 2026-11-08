@@ -181,6 +181,17 @@ enum AgentSummaryLine {
     /// The model's text made into the line: tidied, with the "your turn" start added by code.
     static func line(fromModel raw: String, for input: AgentSummaryInput) -> String? {
         guard var text = tidy(raw) else { return nil }
+        // Never a quote and never another language: the line must be the model's own English.
+        // Copies only matter from text that isn't English (an English echo of a feature name is fine).
+        let names = [input.prompt, input.lastMessage] + input.tools.map(\.summary) + [input.pendingTool?.summary]
+        let foreign = [input.lastMessage, input.prompt].filter { !isEnglishLooking($0 ?? "") }
+        if copies(text, from: foreign) || !isEnglishLooking(text, allowing: names.compactMap { $0 }) {
+            switch input.turnPrefix {
+            case "Asks whether", "Asks": return "Asks you a question"
+            case "Done:": return "Done: turn finished"
+            default: return fallback(for: input)
+            }
+        }
         guard let prefix = input.turnPrefix else {
             // A working line describes the work in -ing form; one that echoes the request falls back to the tool.
             let first = text.split(separator: " ").first
@@ -206,6 +217,31 @@ enum AgentSummaryLine {
         if prefix.hasPrefix("Asks") { text = first.lowercased() + text.dropFirst() }
         if text.hasSuffix("?") { text.removeLast() }
         return tidy("\(prefix) \(text)")
+    }
+
+    /// Five or more words in a row taken from the agent's message or the prompt.
+    static func copies(_ line: String, from sources: [String?]) -> Bool {
+        let words = { (text: String) in
+            text.lowercased().split(whereSeparator: { !$0.isLetter && !$0.isNumber }).map(String.init)
+        }
+        let lineWords = words(line)
+        guard lineWords.count >= 5 else { return false }
+        let runs = Set((0...(lineWords.count - 5)).map { lineWords[$0..<$0 + 5].joined(separator: " ") })
+        return sources.compactMap { $0 }.contains { source in
+            let sourceWords = words(source)
+            guard sourceWords.count >= 5 else { return false }
+            return (0...(sourceWords.count - 5)).contains { runs.contains(sourceWords[$0..<$0 + 5].joined(separator: " ")) }
+        }
+    }
+
+    /// Letters are plain ASCII (file names aside, an English line has no ç, ğ, ş, ü…).
+    /// Words with non-ASCII letters that also appear in a tool hint count as names ("Çeviri.swift") and pass.
+    static func isEnglishLooking(_ line: String, allowing names: [String] = []) -> Bool {
+        let nameWords = Set(names.flatMap { $0.split(whereSeparator: \.isWhitespace).map(String.init) })
+        return !line.split(whereSeparator: \.isWhitespace).contains { word in
+            word.unicodeScalars.contains { $0.properties.isAlphabetic && !$0.isASCII }
+                && !nameWords.contains { $0.contains(word.trimmingCharacters(in: .punctuationCharacters)) }
+        }
     }
 
     /// Lines code can write exactly, without the model: permission (what the agent wants to do), a stopped turn,
@@ -277,7 +313,8 @@ enum AgentSummaryLine {
     /// Used when Apple Intelligence is unavailable or fails: the last tool and its hint.
     static func fallback(for input: AgentSummaryInput) -> String? {
         guard let tool = input.tools.last else { return nil }
-        var hint = tool.summary.map { AgentSummaryInput.clean($0, limit: 50) }
+        var hint = tool.summary.map { shortCommand(AgentSummaryInput.clean($0, limit: 120), tool: tool.name) }
+            .map { String($0.prefix(50)) }
         if ["Grep", "Glob"].contains(tool.name) {
             hint = hint.map { $0.replacingOccurrences(of: "\\", with: "").trimmingCharacters(in: .punctuationCharacters) }
         }

@@ -201,7 +201,7 @@ struct AgentSummarySchedulingTests {
         model.apply(event(.toolStarted, at: clock.now, tool: "Bash", summary: "git log -1"))
         model.apply(event(.turnEnded(backgroundTasks: []), at: clock.now))
         await settle(model)
-        #expect(model.summaries[key] == "Running git log -1")
+        #expect(model.summaries[key] == "Running git log")
     }
 }
 
@@ -220,7 +220,7 @@ struct AgentSummaryTextTests {
             AgentSummaryInput(agent: .claudeCode, project: "p", phase: .running, prompt: nil, tools: tools)
         }
         #expect(AgentSummaryLine.fallback(for: input([])) == nil)
-        #expect(AgentSummaryLine.fallback(for: input([.init(name: "Bash", summary: "git log -1")])) == "Running git log -1")
+        #expect(AgentSummaryLine.fallback(for: input([.init(name: "Bash", summary: "git log -1")])) == "Running git log")
         #expect(AgentSummaryLine.fallback(for: input([.init(name: "Read", summary: "Package.swift")])) == "Reading Package.swift")
         #expect(AgentSummaryLine.fallback(for: input([.init(name: "Edit", summary: nil)])) == "Editing (Edit)")
         #expect(AgentSummaryLine.fallback(for: input([.init(name: "mcp__db__query", summary: nil)])) == "Using mcp__db__query")
@@ -280,7 +280,7 @@ struct AgentSummaryTextTests {
         #expect(line(.waitingOn("reviewer")) == "Waiting for reviewer")
         #expect(line(.yourTurn, stopped: true, last: "Renaming the module") == "Stopped: Renaming the module")
         #expect(line(.yourTurn, stopped: true, tools: [.init(name: "Bash", summary: "grep -rl Old Sources")])
-            == "Stopped: Running grep -rl Old Sources")
+            == "Stopped: Running grep Old Sources")
         #expect(line(.yourTurn) == nil)          // the model writes these
         #expect(line(.running) == nil)
     }
@@ -317,6 +317,37 @@ struct AgentSummaryTextTests {
         #expect(AgentSummaryLine.fallback(for: pattern) == "Searching LegacyLogger")
     }
 
+    @Test func neverQuotesOrKeepsAnotherLanguage() {
+        let turkish = AgentSummaryInput(agent: .claudeCode, project: "p", phase: .yourTurn, prompt: nil,
+                                        lastMessage: "Reviewer düzeltmelerini işledim, 119b635 olarak push ettim.")
+        #expect(AgentSummaryLine.line(fromModel: "Reviewer düzeltmelerini işledim, 119b635 olarak pu", for: turkish)
+            == "Done: turn finished")
+        #expect(AgentSummaryLine.line(fromModel: "Applied the reviewer fixes and pushed 119b635", for: turkish)
+            == "Done: Applied the reviewer fixes and pushed 119b635")
+        let english = AgentSummaryInput(agent: .claudeCode, project: "p", phase: .yourTurn, prompt: nil,
+                                        lastMessage: "The retry is in place and all fourteen tests pass now. Should I commit it?")
+        // English source: an echo is allowed (only non-English sources count as copies).
+        #expect(AgentSummaryLine.line(fromModel: "the retry is in place and all fourteen tests pass", for: english)
+            == "Asks whether the retry is in place and all fourteen tests pass")
+        // An English message: repeating its feature name isn't a copy.
+        let backoff = AgentSummaryInput(agent: .claudeCode, project: "p", phase: .yourTurn, prompt: nil,
+                                        lastMessage: "Added a retry with exponential backoff to UploadClient.")
+        #expect(AgentSummaryLine.line(fromModel: "Added retry with exponential backoff to UploadClient", for: backoff)
+            == "Done: Added retry with exponential backoff to UploadClient")
+        // Turkish without diacritics copied is still caught.
+        let plain = AgentSummaryInput(agent: .claudeCode, project: "p", phase: .yourTurn, prompt: nil,
+                                      lastMessage: "Düzeltmeleri bitirdim: 119b635 olarak push ettim ve 99 testin hepsi geçiyor.")
+        #expect(AgentSummaryLine.line(fromModel: "119b635 olarak push ettim ve 99 testin", for: plain) == "Done: turn finished")
+        // A non-ASCII file name from the tool hints is a name, not another language.
+        let ceviri = AgentSummaryInput(agent: .claudeCode, project: "p", phase: .yourTurn, prompt: nil,
+                                       tools: [.init(name: "Edit", summary: "Çeviri.swift")],
+                                       lastMessage: "Fixed the plural rules.")
+        #expect(AgentSummaryLine.line(fromModel: "Fixed the plural rules in Çeviri.swift", for: ceviri)
+            == "Done: Fixed the plural rules in Çeviri.swift")
+        #expect(AgentSummaryLine.isEnglishLooking("Editing Package.swift"))
+        #expect(!AgentSummaryLine.isEnglishLooking("Düzeltmeleri işliyor"))
+    }
+
     @Test func stopFailureAndInterruptMarkTheTurnStopped() {
         var store = AgentSessionStore()
         var stop = AgentEvent(agent: .claudeCode, sessionID: "s", kind: .turnEnded(backgroundTasks: []), time: .now)
@@ -350,7 +381,7 @@ struct AgentSummaryTextTests {
         // The fallback line uses the same cleaning.
         let input = AgentSummaryInput(agent: .claudeCode, project: "p", phase: .running, prompt: nil,
                                       tools: [.init(name: "Bash", summary: "API_TOKEN=sk-test-4f9a2b deploy.sh staging")])
-        #expect(AgentSummaryLine.fallback(for: input) == "Running API_TOKEN=… deploy.sh staging")
+        #expect(AgentSummaryLine.fallback(for: input) == "Running deploy.sh staging")
     }
 
     @Test func promptIsCutToThreeThousandCharacters() {

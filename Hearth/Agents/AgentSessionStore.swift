@@ -10,8 +10,8 @@ enum AgentPhase: Sendable, Equatable {
     case permission
     /// The turn is over and nothing runs in the background: the user's move.
     case yourTurn
-    /// The turn is over but background work still runs (a subagent, a background shell);
-    /// the agent continues by itself when it finishes.
+    /// The turn is over but a subagent, workflow or teammate still runs; the agent continues by itself
+    /// when it finishes.
     case waitingOn(String)
     case ended
 }
@@ -65,6 +65,8 @@ struct AgentSession: Sendable, Equatable, Identifiable {
     var lastMessage: String?
     /// The tool of the latest permission request (main agent).
     var permissionTool: String?
+    /// Background work that doesn't hold the turn, e.g. a dev server: shown as "running: …" in the row.
+    var backgroundNote: String?
 
     var agent: AgentKind { id.agent }
     /// The project: the last path component of the working directory.
@@ -148,6 +150,7 @@ struct AgentSessionStore: Sendable, Equatable {
             set(.ended, on: &session, at: event.time)
         case .promptSubmitted:
             session.lastPrompt = event.prompt
+            session.backgroundNote = nil
             set(.running, on: &session, at: event.time)
         case .toolStarted:
             if let tool = tool(of: event) {
@@ -173,7 +176,9 @@ struct AgentSessionStore: Sendable, Equatable {
         case .turnEnded(let tasks):
             session.openTools = [:]
             if let message = event.lastMessage { session.lastMessage = message }
-            if let busy = tasks.first(where: \.isRunning) {
+            let running = tasks.filter(\.isRunning)
+            session.backgroundNote = running.first { !$0.holdsTurn }.map(\.label)
+            if let busy = running.first(where: \.holdsTurn) {
                 set(.waitingOn(busy.label), on: &session, at: event.time)
             } else {
                 set(.yourTurn, on: &session, at: event.time)

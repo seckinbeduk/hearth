@@ -331,6 +331,34 @@ struct AgentSessionClockTests {
         #expect(store.sessions.values.first?.phase == .running)
     }
 
+    @Test func runningDevServerDoesntHoldTheTurn() {
+        let t0 = Date(timeIntervalSinceReferenceDate: 0)
+        var store = AgentSessionStore()
+        store.apply(event(.promptSubmitted, at: t0))
+        store.apply(event(.turnEnded(backgroundTasks: [
+            .init(id: "t1", type: "shell", status: "running", description: "npm run dev")]), at: t0))
+        let session = store.sessions.values.first!
+        #expect(session.phase == .yourTurn)
+        #expect(session.backgroundNote == "npm run dev")
+        #expect(store.needsUser(at: t0))
+        // The note goes with the next prompt.
+        store.apply(event(.promptSubmitted, at: t0))
+        #expect(store.sessions.values.first?.backgroundNote == nil)
+    }
+
+    @Test func workflowsAndTeammatesHoldTheTurnLikeSubagents() {
+        let t0 = Date(timeIntervalSinceReferenceDate: 0)
+        var store = AgentSessionStore()
+        store.apply(event(.promptSubmitted, at: t0))
+        store.apply(event(.turnEnded(backgroundTasks: [
+            .init(id: "t1", type: "monitor", status: "running", description: "watch CI"),
+            .init(id: "t2", type: "workflow", status: "running", description: "Review", name: "review-changes")]), at: t0))
+        let session = store.sessions.values.first!
+        #expect(session.phase == .waitingOn("review-changes"))
+        #expect(session.backgroundNote == "watch CI")
+        #expect(!store.needsUser(at: t0))
+    }
+
     @Test func codexHasNoSubagentRows() {
         var store = AgentSessionStore()
         store.apply(event(.promptSubmitted, at: .now, agent: .codex))

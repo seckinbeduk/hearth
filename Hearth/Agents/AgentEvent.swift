@@ -43,10 +43,15 @@ struct AgentEvent: Sendable, Equatable {
         var status: String?
         var description: String?
         var agentType: String?
+        /// Workflow name (workflow tasks only).
+        var name: String?
 
         var isRunning: Bool { status == "running" }
-        /// What the session waits on: the subagent's type, else the task's description.
-        var label: String { [agentType, description].compactMap { $0 }.first { !$0.isEmpty } ?? "a background task" }
+        /// Agent work that resumes the turn by itself when it finishes. Shells, monitors and the rest may run
+        /// for good (a dev server), so they don't hold the turn.
+        var holdsTurn: Bool { ["subagent", "workflow", "teammate"].contains(type ?? "") }
+        /// What the session waits on or runs: the subagent's type, the workflow's name, else the description.
+        var label: String { [agentType, name, description].compactMap { $0 }.first { !$0.isEmpty } ?? "a background task" }
     }
 
     var agent: AgentKind
@@ -117,7 +122,8 @@ enum AgentEventDecoder {
             guard let id = nonEmpty(item["id"]) else { return nil }
             return AgentEvent.BackgroundTask(
                 id: id, type: nonEmpty(item["type"]), status: nonEmpty(item["status"]),
-                description: nonEmpty(item["description"]), agentType: nonEmpty(item["agent_type"]))
+                description: nonEmpty(item["description"]), agentType: nonEmpty(item["agent_type"]),
+                name: nonEmpty(item["name"]))
         }
     }
 

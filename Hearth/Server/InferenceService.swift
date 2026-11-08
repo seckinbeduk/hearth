@@ -22,22 +22,27 @@ final class InferenceService {
 
     private let models: LocalModelManager
     private let stats: UsageStats
+    private let agents: AgentEndpoint
     private var server: HTTPServer?
 
     /// MLX runs one generation at a time; others wait their turn.
     private var mlxBusy = false
     private var waiters: [CheckedContinuation<Void, Never>] = []
 
-    init(models: LocalModelManager, stats: UsageStats) {
+    init(models: LocalModelManager, stats: UsageStats, agents: AgentEndpoint) {
         self.models = models
         self.stats = stats
+        self.agents = agents
     }
 
     // MARK: - Lifecycle
 
     func start() async {
         if isRunning { return }
+        let agents = self.agents
         let server = HTTPServer { [weak self] request, responder in
+            // Agent hooks are answered right here, off the main actor, before anything else happens.
+            if AgentEndpoint.handles(request.path) { await agents.handle(request, responder); return }
             guard let self else { await responder.respondError(status: 503, message: "Hearth is shutting down."); return }
             await self.handle(request, responder)
         }

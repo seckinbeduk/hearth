@@ -8,7 +8,7 @@ shows tokens per second as they stream, which apps are calling and how much you 
 and, new in 0.3.0, what your coding agents are doing.
 
 <p align="center">
-  <img src="docs/screenshots/menu-bar.png" width="460" alt="Hearth's menu bar panel: model, endpoint, live stats, both models and who's using them">
+  <img src="docs/screenshots/menu-bar.png" width="340" alt="Hearth's menu bar panel: endpoint, live stats, the models it serves, who's using them and the coding agents' sessions">
 </p>
 
 - **No decisions to make.** One recommendation for *your* chip, memory and disk, with the reason.
@@ -28,12 +28,12 @@ Requires an Apple Silicon Mac with macOS 15 or later (Apple Intelligence needs m
 
 ## Screenshots
 
-| First launch | Every model, judged for your Mac |
+| One recommendation for this Mac | Every model, judged for your Mac |
 |---|---|
-| <img src="docs/screenshots/setup.png" alt="Setup: this Mac, Apple Intelligence, models already on disk, and one recommendation"> | <img src="docs/screenshots/models.png" alt="All catalog models with fit and speed estimates for this Mac"> |
+| <img src="docs/screenshots/setup.png" alt="Choosing a local model: this Mac, Apple Intelligence, models already on disk, and one recommendation"> | <img src="docs/screenshots/models.png" alt="All catalog models with fit and speed estimates for this Mac"> |
 
 <p align="center">
-  <img src="docs/screenshots/dashboard.png" width="720" alt="Dashboard: endpoint with model picker and code samples, savings, try-it box, performance summary and recent requests">
+  <img src="docs/screenshots/dashboard.png" width="720" alt="The Details window: the local model and Apple Intelligence, the endpoint with code samples, savings and a try-it box; a switch at the top shows Agents">
 </p>
 
 ## Install
@@ -188,7 +188,7 @@ Agents off forgets them. Requests to the agent endpoints need a per-install toke
 - Agents keeps sessions in memory only; nothing about them is written to disk or logs (see [Agents](#agents)).
 - Hearth keeps request **metadata** for 7 days (app, model, time, token counts, timings) in
   `~/Library/Application Support/Hearth/usage.json`. Prompts and replies are never stored.
-  **Clear** in the dashboard deletes it.
+  **Clear** in the Details window deletes it.
 - The only network traffic Hearth makes on its own is the model download from Hugging Face. Agent summaries
   run on Apple Intelligence on this Mac, never on the network.
 
@@ -218,7 +218,7 @@ without one it makes an ad-hoc signed DMG.
 | `Server/` | Loopback HTTP server, OpenAI types, MLX and Apple Intelligence backends |
 | `Stats/` | Live tok/s, request history, per-model performance, cloud prices |
 | `Agents/` | Agent hook events, sessions, summaries, the `/agents` endpoint, Connect/Disconnect |
-| `UI/` | Menu bar item and panel, setup window, dashboard, Agents section and cards, Markdown rendering |
+| `UI/` | Menu bar item and panel, setup window, Details window, Agents section and cards, Markdown rendering |
 
 Built on [MLX Swift](https://github.com/ml-explore/mlx-swift-lm),
 [swift-huggingface](https://github.com/huggingface/swift-huggingface) and
